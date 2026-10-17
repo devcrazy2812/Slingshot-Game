@@ -1,0 +1,525 @@
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap');
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+body, html {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background-color: #030712;
+    color: #e2e8f0;
+    font-family: 'Rajdhani', sans-serif;
+}
+
+#gameCanvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    cursor: crosshair;
+}
+
+/* Subtle CRT scanline effect */
+.scanlines {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    background: linear-gradient(
+        rgba(18, 16, 16, 0) 50%, 
+        rgba(0, 0, 0, 0.25) 50%
+    ), linear-gradient(
+        90deg,
+        rgba(255, 0, 0, 0.03),
+        rgba(0, 255, 0, 0.01),
+        rgba(0, 0, 255, 0.03)
+    );
+    background-size: 100% 4px, 6px 100%;
+    z-index: 5;
+    opacity: 0.7;
+}
+
+/* Glassmorphism Sci-Fi HUD */
+#hud {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 24px 32px;
+}
+
+.hud-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+}
+
+.hud-panel {
+    background: rgba(10, 15, 30, 0.78);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(0, 247, 255, 0.25);
+    border-radius: 8px;
+    padding: 12px 20px;
+    box-shadow: 0 0 20px rgba(0, 247, 255, 0.1);
+}
+
+.hud-title {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: #94a3b8;
+    text-transform: uppercase;
+    margin-bottom: 2px;
+}
+
+.hud-value {
+    font-family: 'Orbitron', monospace;
+    font-size: 26px;
+    font-weight: 700;
+    color: #ffffff;
+    text-shadow: 0 0 10px rgba(0, 247, 255, 0.6);
+}
+
+.hud-value.speed {
+    color: #00f7ff;
+}
+
+.hud-value.score {
+    color: #ffd700;
+}
+
+.hud-combo {
+    font-size: 14px;
+    font-weight: 700;
+    color: #ff007f;
+    text-shadow: 0 0 8px #ff007f;
+    margin-left: 8px;
+}
+
+/* Event Horizon Sensor */
+.horizon-sensor-box {
+    text-align: center;
+    border-color: rgba(255, 0, 85, 0.4);
+    box-shadow: 0 0 20px rgba(255, 0, 85, 0.15);
+}
+
+.sensor-warning {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 1.5px;
+    color: #ff3366;
+    animation: pulseAlert 1.2s infinite alternate;
+}
+
+@keyframes pulseAlert {
+    from { opacity: 0.6; }
+    to { opacity: 1; text-shadow: 0 0 10px #ff0055; }
+}
+
+.hud-actions {
+    display: flex;
+    gap: 12px;
+    pointer-events: auto;
+}
+
+.hud-btn {
+    background: rgba(15, 23, 42, 0.8);
+    border: 1px solid rgba(0, 247, 255, 0.4);
+    color: #00f7ff;
+    border-radius: 6px;
+    padding: 8px 14px;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.hud-btn:hover {
+    background: rgba(0, 247, 255, 0.2);
+    box-shadow: 0 0 12px #00f7ff;
+    transform: scale(1.05);
+}
+
+/* HUD Bottom: Gauges & Abilities */
+.hud-bottom {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+}
+
+.gauges {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 230px;
+}
+
+.gauge-row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.gauge-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 1.5px;
+    color: #cbd5e1;
+}
+
+.bar-container {
+    width: 100%;
+    height: 10px;
+    background: rgba(2, 6, 23, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 5px;
+    overflow: hidden;
+}
+
+.bar-fill {
+    height: 100%;
+    width: 100%;
+    transition: width 0.1s linear;
+}
+
+.fuel-fill {
+    background: linear-gradient(90deg, #ff9900, #ffd700);
+    box-shadow: 0 0 8px #ff9900;
+}
+
+.shield-fill {
+    background: linear-gradient(90deg, #00b4d8, #00f7ff);
+    box-shadow: 0 0 8px #00f7ff;
+}
+
+/* Abilities Widget */
+.abilities-container {
+    display: flex;
+    gap: 14px;
+    margin-top: 6px;
+}
+
+.ability-badge {
+    background: rgba(2, 6, 23, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+}
+
+.ability-status {
+    font-weight: 700;
+    margin-left: 4px;
+}
+
+.hud-tutorial-hint {
+    background: rgba(10, 15, 30, 0.75);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 20px;
+    padding: 8px 24px;
+    font-size: 13px;
+    color: #94a3b8;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+}
+
+.hud-tutorial-hint span {
+    color: #00f7ff;
+    font-weight: 700;
+}
+
+/* Floating combat/achievement text */
+.floating-combat-text {
+    position: absolute;
+    pointer-events: none;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 18px;
+    font-weight: 900;
+    text-shadow: 0 0 12px currentColor;
+    transform: translate(-50%, -50%);
+    animation: floatUp 1.2s cubic-bezier(0.1, 0.9, 0.2, 1) forwards;
+    z-index: 100;
+}
+
+@keyframes floatUp {
+    0% { opacity: 0; transform: translate(-50%, 0) scale(0.6); }
+    20% { opacity: 1; transform: translate(-50%, -20px) scale(1.1); }
+    80% { opacity: 1; transform: translate(-50%, -40px) scale(1.0); }
+    100% { opacity: 0; transform: translate(-50%, -60px) scale(0.9); }
+}
+
+/* Modals & Screens */
+.screen-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(circle at center, rgba(10, 15, 30, 0.88) 0%, rgba(3, 7, 18, 0.98) 100%);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    z-index: 50;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+    overflow-y: auto;
+}
+
+.modal-card {
+    background: rgba(15, 23, 42, 0.88);
+    border: 1px solid rgba(0, 247, 255, 0.35);
+    border-radius: 16px;
+    max-width: 760px;
+    width: 100%;
+    padding: 36px;
+    box-shadow: 0 0 50px rgba(0, 247, 255, 0.2), inset 0 0 30px rgba(0, 247, 255, 0.05);
+    text-align: center;
+}
+
+.modal-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 42px;
+    font-weight: 900;
+    letter-spacing: 3px;
+    background: linear-gradient(135deg, #ffffff 0%, #00f7ff 60%, #9900ff 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 4px;
+    text-shadow: 0 0 30px rgba(0, 247, 255, 0.5);
+}
+
+.modal-subtitle {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 13px;
+    letter-spacing: 4px;
+    color: #38bdf8;
+    text-transform: uppercase;
+    margin-bottom: 20px;
+}
+
+.mission-brief {
+    font-size: 14px;
+    line-height: 1.5;
+    color: #cbd5e1;
+    margin-bottom: 22px;
+    text-align: left;
+    background: rgba(2, 6, 23, 0.6);
+    padding: 12px 18px;
+    border-left: 3px solid #00f7ff;
+    border-radius: 4px;
+}
+
+/* Ship Selection Hangar */
+.hangar-section {
+    margin-bottom: 24px;
+    text-align: left;
+}
+
+.hangar-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 14px;
+    letter-spacing: 1.5px;
+    color: #94a3b8;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+}
+
+.ship-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+}
+
+.ship-select-card {
+    background: rgba(30, 41, 59, 0.45);
+    border: 2px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    padding: 14px 12px;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    text-align: center;
+}
+
+.ship-select-card:hover {
+    border-color: rgba(0, 247, 255, 0.5);
+    transform: translateY(-3px);
+    background: rgba(30, 41, 59, 0.7);
+}
+
+.ship-select-card.selected {
+    border-color: #00f7ff;
+    background: rgba(0, 247, 255, 0.15);
+    box-shadow: 0 0 18px rgba(0, 247, 255, 0.35);
+}
+
+.ship-icon {
+    font-size: 24px;
+    margin-bottom: 6px;
+}
+
+.ship-name {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    color: #ffffff;
+    margin-bottom: 4px;
+}
+
+.ship-desc {
+    font-size: 11px;
+    color: #94a3b8;
+    line-height: 1.3;
+}
+
+.features-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 26px;
+    text-align: left;
+}
+
+.feature-box {
+    background: rgba(30, 41, 59, 0.45);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 10px 14px;
+}
+
+.feature-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    color: #00f7ff;
+    margin-bottom: 3px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.feature-desc {
+    font-size: 12px;
+    color: #94a3b8;
+    line-height: 1.35;
+}
+
+.btn-primary {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: #030712;
+    background: linear-gradient(135deg, #00f7ff 0%, #00b4d8 100%);
+    border: none;
+    border-radius: 8px;
+    padding: 16px 48px;
+    cursor: pointer;
+    box-shadow: 0 0 25px rgba(0, 247, 255, 0.5);
+    transition: all 0.25s ease;
+}
+
+.btn-primary:hover {
+    transform: scale(1.04);
+    box-shadow: 0 0 40px rgba(0, 247, 255, 0.8);
+    background: linear-gradient(135deg, #ffffff 0%, #00f7ff 100%);
+}
+
+/* Game Over screen stats */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    margin: 24px 0 32px 0;
+}
+
+.stat-item {
+    background: rgba(2, 6, 23, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 12px;
+}
+
+.stat-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.stat-val {
+    font-family: 'Orbitron', monospace;
+    font-size: 20px;
+    font-weight: 700;
+    color: #00f7ff;
+    margin-top: 4px;
+}
+
+.gameover-reason {
+    color: #ff3366;
+    font-size: 15px;
+    font-family: 'Share Tech Mono', monospace;
+    letter-spacing: 1px;
+    margin-bottom: 12px;
+}
+
+.hidden {
+    display: none !important;
+}
+
+/* Mobile Controls */
+.mobile-controls {
+    display: none;
+    position: absolute;
+    bottom: 24px;
+    right: 24px;
+    z-index: 20;
+    pointer-events: auto;
+}
+
+@media (max-width: 768px) {
+    .ship-grid {
+        grid-template-columns: 1fr;
+    }
+    .features-grid {
+        grid-template-columns: 1fr;
+    }
+    .stats-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+    .hud-title {
+        font-size: 9px;
+    }
+    .hud-value {
+        font-size: 18px;
+    }
+    .modal-title {
+        font-size: 28px;
+    }
+    .modal-card {
+        padding: 20px;
+    }
+    .mobile-controls {
+        display: flex;
+        gap: 10px;
+    }
+}

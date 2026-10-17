@@ -1,0 +1,17 @@
+{
+  "name": "slingshot-event-horizon",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Orbital mechanics cosmic runner and physics lab",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vite": "5.4.11",
+    "vitest": "2.1.8"
+  }
+}
