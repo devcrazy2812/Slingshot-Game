@@ -1,26 +1,29 @@
 /**
  * @file main.js
- * Application entry point: initializes canvas and boot sequences.
+ * Slingshot: Event Horizon - Application Entry Point
+ * Initializes configuration, audio systems, and boots the Game engine.
  */
 
 import { Config } from './config.js';
+import { Game } from './game/game.js';
 
-console.log('Slingshot: Event Horizon initialized', {
-  timestep: Config.sim.dt,
-  features: Config.features
+console.log('🌌 Slingshot: Event Horizon bootstrapping...', {
+  dt: Config.sim.dt,
+  features: Config.features,
+  physicsEps: Config.physics.eps
 });
 
-const canvas = document.getElementById('gameCanvas');
-if (canvas) {
-  const ctx = canvas.getContext('2d');
-  const resize = () => {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-  };
-  window.addEventListener('resize', resize);
-  resize();
+function boot() {
+  const canvas = document.getElementById('gameCanvas');
+  if (!canvas) {
+    console.error('Canvas #gameCanvas not found in document!');
+    return;
+  }
+  window.game = new Game();
+}
 
-  // Initial peaceful void clear
-  ctx.fillStyle = '#070914';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+if (document.readyState === 'loading') {
+  window.addEventListener('DOMContentLoaded', boot);
+} else {
+  boot();
 }

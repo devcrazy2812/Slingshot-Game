@@ -4,11 +4,191 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
-  <title>Slingshot: Event Horizon</title>
+  <title>Slingshot: Event Horizon — Cosmic Physics Runner</title>
   <link rel="stylesheet" href="/src/style.css">
 </head>
 <body>
+  <!-- Game Canvas -->
   <canvas id="gameCanvas"></canvas>
+  <div class="scanlines"></div>
+
+  <!-- HUD Overlay -->
+  <div id="hud" class="hidden">
+    <div class="hud-top">
+      <!-- Left: Speed & Distance -->
+      <div class="hud-panel ui-interactive">
+        <div class="hud-title">Relativistic Velocity</div>
+        <div class="hud-value speed" id="hudSpeed">0.00 c</div>
+        <div style="margin-top: 8px;">
+          <span class="hud-title">Displacement: </span>
+          <span id="hudDistance" style="font-family: inherit; font-weight: 700; color: #cbd5e1;">0 LY</span>
+        </div>
+      </div>
+
+      <!-- Center: Event Horizon Warning Sensor -->
+      <div class="hud-panel horizon-sensor-box ui-interactive" id="horizonProximityMeter">
+        <div class="sensor-warning">⚠️ SINGULARITY PROXIMITY</div>
+        <div class="hud-value" id="hudHorizonGap" style="color: #ff3366; font-size: 22px;">80 AU</div>
+      </div>
+
+      <!-- Right: Score, Combo & Controls -->
+      <div style="display: flex; gap: 14px; align-items: flex-start;">
+        <div class="hud-panel ui-interactive" style="text-align: right;">
+          <div class="hud-title">Galactic Score</div>
+          <div class="hud-value score">
+            <span id="hudScore">0</span>
+            <span class="hud-combo" id="hudCombo">1x</span>
+          </div>
+        </div>
+        <div class="hud-actions ui-interactive">
+          <button class="hud-btn" id="muteBtn" title="Toggle Sound / Music">🔊</button>
+          <button class="hud-btn" id="pauseBtn" title="Pause Game">⏸</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom: Thruster Fuel, Deflector Shields & Quantum Abilities -->
+    <div class="hud-bottom">
+      <div class="hud-panel gauges ui-interactive">
+        <div class="gauge-row">
+          <div class="gauge-label">ION THRUSTER BOOST [W / R-CLICK]</div>
+          <div class="bar-container">
+            <div class="bar-fill fuel-fill" id="fuelBar" style="width: 100%;"></div>
+          </div>
+        </div>
+        <div class="gauge-row">
+          <div class="gauge-label">DEFLECTOR SHIELDS</div>
+          <div class="bar-container">
+            <div class="bar-fill shield-fill" id="shieldBar" style="width: 100%;"></div>
+          </div>
+        </div>
+
+        <!-- Quantum Abilities Bar -->
+        <div class="abilities-container">
+          <div class="ability-badge">
+            <span>PHASE:</span>
+            <span id="phaseCooldown" class="ability-status" style="color: #22c55e;">READY [SHIFT]</span>
+          </div>
+          <div class="ability-badge">
+            <span>TIME DILATION:</span>
+            <span id="dilationCooldown" class="ability-status" style="color: #22c55e;">READY [F]</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="hud-tutorial-hint">
+        <span>[HOLD SPACE / CLICK]</span> ORBIT STAR &bull; 
+        <span>[RELEASE]</span> SLINGSHOT &bull; 
+        <span>[SHIFT]</span> PHASE &bull; 
+        <span>[F]</span> SLOW-MO
+      </div>
+    </div>
+  </div>
+
+  <!-- Mobile Quick Touch Buttons -->
+  <div class="mobile-controls ui-interactive">
+    <button class="hud-btn" id="mobilePhaseBtn" style="font-size: 14px; padding: 14px 18px;">🛡️ PHASE</button>
+    <button class="hud-btn" id="mobileBoostBtn" style="font-size: 14px; padding: 14px 18px;">⚡ BOOST</button>
+  </div>
+
+  <!-- Start / Title Screen Modal with Ship Hangar -->
+  <div id="startScreen" class="screen-overlay">
+    <div class="modal-card ui-interactive">
+      <h1 class="modal-title">SLINGSHOT</h1>
+      <div class="modal-subtitle">EVENT HORIZON &bull; COSMIC PHYSICS RUNNER</div>
+
+      <div class="mission-brief">
+        <strong>MISSION LOG:</strong> The core of a supermassive black hole has collapsed behind your sector. With primary warp engines offline, anchor your <strong>Gravitational Tether Hook</strong> to stars, slingshot through orbital gravity wells at relativistic speeds, and escape the encroaching Event Horizon.
+      </div>
+
+      <!-- Ship Selection Hangar -->
+      <div class="hangar-section">
+        <div class="hangar-title">Select Interceptor Vessel</div>
+        <div class="ship-grid">
+          <div class="ship-select-card selected" data-ship="vanguard">
+            <div class="ship-icon">🚀</div>
+            <div class="ship-name">Vanguard-IX</div>
+            <div class="ship-desc">Balanced Interceptor. Agile handling, standard shields & thrusters.</div>
+          </div>
+          <div class="ship-select-card" data-ship="phantom">
+            <div class="ship-icon">⚡</div>
+            <div class="ship-name">Void Phantom</div>
+            <div class="ship-desc">Recon Skiff. +25% Speed & Slingshot Power, extended tether reach.</div>
+          </div>
+          <div class="ship-select-card" data-ship="dreadnought">
+            <div class="ship-icon">🛡️</div>
+            <div class="ship-name">Titan Dreadnought</div>
+            <div class="ship-desc">Heavy Cruiser. 180 Max Shield, automatic magnetic gravity suction.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="features-grid">
+        <div class="feature-box">
+          <div class="feature-title">🌌 Orbital Slingshot</div>
+          <div class="feature-desc">Press & Hold <strong>Space</strong> or <strong>Left Click</strong> near any star to lock tether. Swing into orbit to build velocity!</div>
+        </div>
+        <div class="feature-box">
+          <div class="feature-title">⚡ Perfect Timing & Trajectory</div>
+          <div class="feature-desc">Follow the dynamic trajectory line. Releasing on golden tangents grants a <strong>PERFECT SLINGSHOT</strong> kick!</div>
+        </div>
+        <div class="feature-box">
+          <div class="feature-title">🛡️ Quantum Phase Shift [SHIFT]</div>
+          <div class="feature-desc">Activate to phase intangibly through stellar cores, asteroid fields, and pulsar radiation beams for 3 seconds.</div>
+        </div>
+        <div class="feature-box">
+          <div class="feature-title">⏱️ Relativistic Time Dilation [F]</div>
+          <div class="feature-desc">Slow down cosmic time to 40% to calculate precise orbital angles through hazardous binary star clusters.</div>
+        </div>
+      </div>
+
+      <button class="btn-primary" id="startBtn">LAUNCH INTERCEPTOR</button>
+    </div>
+  </div>
+
+  <!-- Game Over Screen Modal -->
+  <div id="gameOverScreen" class="screen-overlay hidden">
+    <div class="modal-card ui-interactive">
+      <h1 class="modal-title" style="background: linear-gradient(135deg, #ff0055 0%, #ff5500 100%); -webkit-background-clip: text;">VESSEL LOST</h1>
+      <div class="gameover-reason" id="deathReason">Consumed by the Singularity</div>
+
+      <div class="stats-grid">
+        <div class="stat-item">
+          <div class="stat-label">Distance Reached</div>
+          <div class="stat-val" id="finalDistance">0 LY</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">Max Velocity</div>
+          <div class="stat-val" id="finalMaxSpeed">0.00 c</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">Perfect Slingshots</div>
+          <div class="stat-val" id="finalSlingshots">0</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">Final Score</div>
+          <div class="stat-val" id="finalScore" style="color: #ffd700;">0</div>
+        </div>
+        <div class="stat-item" style="grid-column: span 2;">
+          <div class="stat-label">Galactic High Score</div>
+          <div class="stat-val" id="finalHighScore" style="color: #00f7ff;">0</div>
+        </div>
+      </div>
+
+      <button class="btn-primary" id="restartBtn">RE-ENGAGE INTERCEPTOR</button>
+    </div>
+  </div>
+
+  <!-- Pause Screen Modal -->
+  <div id="pauseScreen" class="screen-overlay hidden">
+    <div class="modal-card ui-interactive" style="max-width: 420px;">
+      <h2 class="modal-title" style="font-size: 28px;">SYSTEMS PAUSED</h2>
+      <p style="margin: 20px 0 30px 0; color: #94a3b8;">Orbital trajectory computation suspended.</p>
+      <button class="btn-primary" id="resumeBtn" style="padding: 12px 36px; font-size: 15px;">RESUME FLIGHT</button>
+    </div>
+  </div>
+
+  <!-- Scripts -->
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>
