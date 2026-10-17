@@ -1,0 +1,8 @@
+{
+  "appId": "com.cosmic.slingshot",
+  "appName": "Slingshot: Event Horizon",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  }
+}

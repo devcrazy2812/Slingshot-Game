@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Slingshot: Event Horizon</string>
+    <string name="title_activity_main">Slingshot: Event Horizon</string>
+    <string name="package_name">com.cosmic.slingshot</string>
+    <string name="custom_url_scheme">com.cosmic.slingshot</string>
+</resources>
