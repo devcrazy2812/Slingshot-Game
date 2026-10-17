@@ -8,6 +8,7 @@ import { Config } from '../config.js';
 import { sounds } from '../audio/engine.js';
 import { PhysicsEngine } from '../physics/engine.js';
 import { ParticleSystem } from '../render/particles.js';
+import { NebulaRenderer } from '../render/nebula.js';
 import { Ship, CelestialBody, Wormhole, Asteroid, PhotonCore, EventHorizon } from './entities.js';
 
 export class Game {
@@ -27,6 +28,7 @@ export class Game {
 
         this.physics = new PhysicsEngine();
         this.particles = new ParticleSystem();
+        this.nebula = new NebulaRenderer();
         this.ship = new Ship(100, 0, this.selectedShipClass);
         this.horizon = new EventHorizon();
 
@@ -290,8 +292,9 @@ export class Game {
 
                 const tag = star.isBinary ? 'BINARY SLINGSHOT! +' : 'PERFECT SLINGSHOT! +';
                 this.addFloatingText(`${tag}${bonus}`, this.ship.x, this.ship.y - 20, '#00ffff');
-                this.triggerScreenShake(6);
-                this.particles.emitExplosion(this.ship.x, this.ship.y, '#00ffff', 25);
+                this.triggerScreenShake(8);
+                this.particles.emitShockwave(this.ship.x, this.ship.y, 240, '#00f7ff', 0.55);
+                this.particles.emitExplosion(this.ship.x, this.ship.y, '#00ffff', 35);
             } else {
                 this.score += 50 * this.combo;
                 this.comboTimer = 5.0;
@@ -715,20 +718,32 @@ export class Game {
         }
     }
 
-    // High-performance Spacetime Fabric Grid
+    // High-performance Glowing Spacetime Fabric Trampoline & Equipotential Contours
     drawSpacetimeFabric(ctx, viewLeft, viewRight, viewTop, viewBottom) {
         ctx.save();
-        ctx.strokeStyle = 'rgba(42, 50, 112, 0.28)';
-        ctx.lineWidth = 1;
+        ctx.globalCompositeOperation = 'screen';
 
-        const cellSize = Config.visuals.spacetimeGridCellSize || 100;
+        const cellSize = Config.visuals.spacetimeGridCellSize || 95;
         const startX = Math.floor(viewLeft / cellSize) * cellSize;
         const endX = Math.ceil(viewRight / cellSize) * cellSize;
         const startY = Math.floor(viewTop / cellSize) * cellSize;
         const endY = Math.ceil(viewBottom / cellSize) * cellSize;
 
-        // Pre-filter nearby stars to keep frame rate locked at 60/120 fps
-        const nearbyStars = this.stars.filter(s => s.x > viewLeft - 250 && s.x < viewRight + 250);
+        // Pre-filter nearby stars to keep frame rate locked at 120 fps
+        const nearbyStars = this.stars.filter(s => s.x > viewLeft - 300 && s.x < viewRight + 300);
+
+        // 1. Equipotential Gravity Well Contours around stars
+        for (const s of nearbyStars) {
+            const numContours = 3;
+            for (let k = 1; k <= numContours; k++) {
+                const cRadius = s.radius * (1.2 + k * 1.1);
+                ctx.strokeStyle = `rgba(0, 247, 255, ${0.28 / k})`;
+                ctx.lineWidth = 1.2;
+                ctx.beginPath();
+                ctx.arc(s.x, s.y, cRadius, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+        }
 
         const warpPoint = (x, y) => {
             let wx = x;
@@ -738,13 +753,16 @@ export class Game {
                 const dy = s.y - y;
                 const dist = Math.sqrt(dx * dx + dy * dy);
                 if (dist < s.gravityRadius && dist > 1) {
-                    const pull = Math.min(26, (s.radius * 30) / (dist + 50));
+                    const pull = Math.min(32, (s.radius * 35) / (dist + 40));
                     wx += (dx / dist) * pull;
                     wy += (dy / dist) * pull;
                 }
             }
             return { x: wx, y: wy };
         };
+
+        ctx.strokeStyle = 'rgba(0, 180, 255, 0.22)';
+        ctx.lineWidth = 1;
 
         for (let y = startY; y <= endY; y += cellSize) {
             ctx.beginPath();
@@ -908,11 +926,11 @@ export class Game {
         const viewTop = this.camera.y - halfH;
         const viewBottom = this.camera.y + halfH;
 
+        // Draw Deep Space Volumetric Nebula & Starfield
+        this.nebula.draw(this.ctx, this.camera.x, this.camera.y, viewLeft, viewRight, viewTop, viewBottom, performance.now() * 0.001);
+
         // Draw Spacetime Fabric Rubber Sheet Grid
         this.drawSpacetimeFabric(this.ctx, viewLeft, viewRight, viewTop, viewBottom);
-
-        // Draw Parallax Stars
-        this.drawParallaxStarfield(this.ctx, viewLeft, viewRight, viewTop, viewBottom);
 
         // Draw Color-Coded Trajectory Prediction Arc
         if (this.state === 'PLAYING') {
@@ -920,16 +938,20 @@ export class Game {
             if (traj.points.length > 1) {
                 this.ctx.save();
                 if (traj.status === 'hazard') {
-                    this.ctx.strokeStyle = 'rgba(255, 50, 70, 0.8)';
-                    this.ctx.lineWidth = 2;
+                    this.ctx.strokeStyle = 'rgba(255, 50, 70, 0.85)';
+                    this.ctx.lineWidth = 2.2;
                     this.ctx.setLineDash([4, 4]);
+                    this.ctx.shadowColor = '#ff0055';
+                    this.ctx.shadowBlur = 10;
                 } else if (traj.status === 'perfect') {
-                    this.ctx.strokeStyle = 'rgba(255, 215, 0, 0.85)';
-                    this.ctx.lineWidth = 2.5;
+                    this.ctx.strokeStyle = 'rgba(255, 215, 0, 0.9)';
+                    this.ctx.lineWidth = 2.8;
                     this.ctx.setLineDash([8, 4]);
+                    this.ctx.shadowColor = '#ffd700';
+                    this.ctx.shadowBlur = 14;
                 } else {
-                    this.ctx.strokeStyle = this.ship.isTethered ? 'rgba(0, 255, 255, 0.6)' : 'rgba(255, 255, 255, 0.35)';
-                    this.ctx.lineWidth = 1.5;
+                    this.ctx.strokeStyle = this.ship.isTethered ? 'rgba(0, 255, 255, 0.65)' : 'rgba(255, 255, 255, 0.35)';
+                    this.ctx.lineWidth = 1.8;
                     this.ctx.setLineDash([6, 8]);
                 }
 
@@ -939,6 +961,23 @@ export class Game {
                     this.ctx.lineTo(pt.x, pt.y);
                 }
                 this.ctx.stroke();
+
+                // Traveling energetic laser pulse nodes along trajectory
+                const pulseTime = Date.now() * 0.003;
+                const pulseNodes = 3;
+                for (let k = 0; k < pulseNodes; k++) {
+                    const pIdx = Math.floor(((pulseTime + k / pulseNodes) % 1.0) * (traj.points.length - 1));
+                    const pt = traj.points[pIdx];
+                    if (pt) {
+                        this.ctx.fillStyle = '#ffffff';
+                        this.ctx.shadowColor = (traj.status === 'perfect') ? '#ffd700' : '#00f7ff';
+                        this.ctx.shadowBlur = 12;
+                        this.ctx.beginPath();
+                        this.ctx.arc(pt.x, pt.y, 3.5, 0, Math.PI * 2);
+                        this.ctx.fill();
+                    }
+                }
+
                 this.ctx.restore();
             }
         }
