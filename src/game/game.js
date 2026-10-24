@@ -239,7 +239,12 @@ export class Game {
         });
 
         window.addEventListener('keydown', (e) => {
-            if (e.code === 'Space') {
+            if (this.state === 'MENU' && (e.code === 'Space' || e.code === 'Enter')) {
+                e.preventDefault();
+                console.log('🚀 Keyboard start triggered!');
+                this.startGame();
+                return;
+            } else if (e.code === 'Space') {
                 e.preventDefault();
                 if (this.state === 'PLAYING' && !this.input.tetherHeld) {
                     this.input.tetherHeld = true;
@@ -382,9 +387,34 @@ export class Game {
         if (startCampaignBtn) startCampaignBtn.addEventListener('click', () => this.openCampaignModal());
 
         const startBtn = document.getElementById('startBtn');
-        if (startBtn) startBtn.addEventListener('click', () => this.startGame());
+        if (startBtn) {
+            const handleStart = (e) => {
+                if (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }
+                console.log('🚀 Launch button triggered! Starting flight...');
+                this.startGame();
+            };
+            startBtn.addEventListener('click', handleStart);
+            startBtn.addEventListener('touchend', handleStart, { passive: false });
+        }
 
         const closeCampaignBtn = document.getElementById('closeCampaignBtn');
+
+        const startHowToPlayBtn = document.getElementById('startHowToPlayBtn');
+        const howToPlayModal = document.getElementById('howToPlayModal');
+        const closeHowToPlayBtn = document.getElementById('closeHowToPlayBtn');
+        if (startHowToPlayBtn && howToPlayModal) {
+            startHowToPlayBtn.addEventListener('click', () => {
+                howToPlayModal.classList.remove('hidden');
+            });
+        }
+        if (closeHowToPlayBtn && howToPlayModal) {
+            closeHowToPlayBtn.addEventListener('click', () => {
+                howToPlayModal.classList.add('hidden');
+            });
+        }
         if (closeCampaignBtn) closeCampaignBtn.addEventListener('click', () => this.closeCampaignModal());
 
         const nextLevelBtn = document.getElementById('nextLevelBtn');

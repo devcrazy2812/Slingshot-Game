@@ -16,6 +16,16 @@
   <link rel="stylesheet" href="/src/style.css">
 </head>
 <body>
+  <!-- Portrait Orientation Blocker (Enforce Landscape Game) -->
+  <div id="rotateScreenOverlay" class="rotate-screen-overlay">
+    <div class="rotate-modal ui-interactive">
+      <div class="rotate-icon-anim">🔄</div>
+      <h2 class="rotate-title">ORIENTATION LOCK</h2>
+      <p class="rotate-text">Slingshot: Event Horizon is calibrated exclusively for wide-angle landscape navigation.</p>
+      <div class="rotate-badge">PLEASE ROTATE DEVICE TO LANDSCAPE 📐</div>
+    </div>
+  </div>
+
   <!-- Ambient Cosmic Lighting -->
   <div class="ambient-glow"></div>
 
@@ -205,111 +215,114 @@
   </div>
 
   <!-- Start / Title Screen Modal with Orbkit Vessel Hangar -->
-  <div id="startScreen" class="screen-overlay">
-    <div class="orbkit-modal ui-interactive">
-      <div class="modal-header header-with-logo">
-        <img src="/logo.svg" alt="Event Horizon Singularity Interceptor Logo" class="game-logo-emblem">
-        <div class="header-text-block">
-          <div class="card-pill" style="margin-bottom: 6px;">
-            <span class="live-indicator"></span>
-            <span>ORBKIT COSMIC RUNNER // EVENT HORIZON</span>
+    <div id="startScreen" class="screen-overlay">
+    <div class="orbkit-modal landscape-start-modal ui-interactive">
+
+      <!-- Top Bar: Logo & Game Title -->
+      <div class="start-header-row">
+        <div class="start-logo-group">
+          <img src="/logo.svg" alt="Slingshot Logo" class="start-logo-icon">
+          <div>
+            <div class="card-pill" style="margin-bottom: 2px; padding: 2px 7px; font-size: 9px;">
+              <span class="live-indicator gold-dot"></span>
+              <span>ORBITAL FLIGHT SIMULATOR // EVENT HORIZON</span>
+            </div>
+            <h1 class="start-game-title">SLINGSHOT</h1>
           </div>
-          <h1 class="modal-title">SLINGSHOT</h1>
-          <div class="modal-subtitle">RELATIVISTIC ORBITAL SIMULATION &amp; DEEP SPACE EXPLORATION</div>
+        </div>
+        <div class="start-telemetry-badge">
+          <span id="hangarPilotRank">RANK I // CADET</span>
+          <span class="badge-sep">|</span>
+          <span id="hangarHighScore" class="highlight-gold">RECORD: 0 PTS</span>
+          <span style="display:none;" id="hangarDirectivesCount">0/8</span>
+          <span style="display:none;" id="hangarCodexCount">0/16</span>
         </div>
       </div>
 
-      <div class="mission-brief">
-        <div class="brief-tag">[MISSION_LOG: SECTOR_NULL]</div>
-        A supermassive singularity has collapsed behind your cruiser. Anchor your <strong>Gravitational Tether Hook</strong> to stellar bodies, slingshot through orbital gravity wells, and harness relativistic velocities to escape the encroaching Event Horizon.
-      </div>
-
-      <!-- Pilot Career Status Strip -->
-      <div class="pilot-career-strip">
-        <div class="pilot-strip-item">
-          <span class="strip-label">PILOT RANK</span>
-          <span class="strip-value" id="hangarPilotRank">RANK I // NOVICE CADET</span>
-        </div>
-        <div class="pilot-strip-item">
-          <span class="strip-label">DIRECTIVES COMPLETED</span>
-          <span class="strip-value" id="hangarDirectivesCount">0 / 8 DIRECTIVES</span>
-        </div>
-        <div class="pilot-strip-item">
-          <span class="strip-label">PLANETS DISCOVERED</span>
-          <span class="strip-value" id="hangarCodexCount">0 / 16 WORLDS</span>
-        </div>
-        <div class="pilot-strip-item">
-          <span class="strip-label">GALACTIC RECORD</span>
-          <span class="strip-value highlight-gold" id="hangarHighScore">0 PTS</span>
-        </div>
-      </div>
-
-      <!-- Ship Selection Hangar with Live Orb Previews -->
-      <div class="hangar-section">
-        <div class="section-heading">
+      <!-- Center: Compact Interceptor Vessel Selector -->
+      <div class="start-vessels-container">
+        <div class="vessels-title-row">
           <span>SELECT INTERCEPTOR VESSEL</span>
-          <span class="heading-meta">[ORB CORES: 3 ONLINE]</span>
+          <span class="vessel-cores-meta">[3 SHIPS READY]</span>
         </div>
-
-        <div class="ship-grid">
-          <!-- Vanguard-IX (shdr-11 Hydrogen Orb) -->
-          <div class="ship-select-card selected" data-ship="vanguard">
-            <div class="orb-preview-wrapper">
-              <canvas class="orb-canvas" id="orbCanvasVanguard" width="100" height="100"></canvas>
-              <div class="orb-badge">SHDR-11</div>
+        <div class="compact-ship-grid">
+          <!-- Vanguard-IX -->
+          <div class="ship-select-card compact-ship-card selected" data-ship="vanguard">
+            <div class="compact-orb-wrap">
+              <canvas class="orb-canvas" id="orbCanvasVanguard" width="70" height="70"></canvas>
             </div>
-            <div class="ship-info">
-              <div class="ship-name">Vanguard-IX</div>
-              <div class="ship-class-tag">[QUANTUM INTERCEPTOR]</div>
-              <div class="ship-desc">Balanced orbital cruiser. Agile telemetry, standard deflectors & thrusters.</div>
-              <div class="ship-specs">
-                <span class="spec-pill">SPEED: 1.0x</span>
-                <span class="spec-pill">SHIELD: 100</span>
-              </div>
+            <div class="compact-ship-details">
+              <div class="compact-ship-name">Vanguard-IX</div>
+              <div class="compact-ship-role">[QUANTUM INTERCEPTOR]</div>
+              <div class="compact-ship-stats">SPD: 1.0x &bull; SHIELD: 100</div>
             </div>
           </div>
 
-          <!-- Void Phantom (shdr-01 Dispersion Orb) -->
-          <div class="ship-select-card" data-ship="phantom">
-            <div class="orb-preview-wrapper">
-              <canvas class="orb-canvas" id="orbCanvasPhantom" width="100" height="100"></canvas>
-              <div class="orb-badge" style="color: #c084fc; border-color: rgba(192, 132, 252, 0.4);">SHDR-01</div>
+          <!-- Void Phantom -->
+          <div class="ship-select-card compact-ship-card" data-ship="phantom">
+            <div class="compact-orb-wrap">
+              <canvas class="orb-canvas" id="orbCanvasPhantom" width="70" height="70"></canvas>
             </div>
-            <div class="ship-info">
-              <div class="ship-name">Void Phantom</div>
-              <div class="ship-class-tag" style="color: #c084fc;">[DISPERSION SKIFF]</div>
-              <div class="ship-desc">High-velocity skiff. +25% Speed & Slingshot Power, extended hook reach.</div>
-              <div class="ship-specs">
-                <span class="spec-pill">SPEED: 1.25x</span>
-                <span class="spec-pill">REACH: +25%</span>
-              </div>
+            <div class="compact-ship-details">
+              <div class="compact-ship-name" style="color: #c084fc;">Void Phantom</div>
+              <div class="compact-ship-role" style="color: #c084fc;">[DISPERSION SKIFF]</div>
+              <div class="compact-ship-stats">SPD: 1.25x &bull; REACH: +25%</div>
             </div>
           </div>
 
-          <!-- Titan Dreadnought (shdr-31 Corona Orb) -->
-          <div class="ship-select-card" data-ship="dreadnought">
-            <div class="orb-preview-wrapper">
-              <canvas class="orb-canvas" id="orbCanvasDreadnought" width="100" height="100"></canvas>
-              <div class="orb-badge" style="color: #fbbf24; border-color: rgba(251, 191, 36, 0.4);">SHDR-31</div>
+          <!-- Titan Dreadnought -->
+          <div class="ship-select-card compact-ship-card" data-ship="dreadnought">
+            <div class="compact-orb-wrap">
+              <canvas class="orb-canvas" id="orbCanvasDreadnought" width="70" height="70"></canvas>
             </div>
-            <div class="ship-info">
-              <div class="ship-name">Titan Dreadnought</div>
-              <div class="ship-class-tag" style="color: #fbbf24;">[CORONA CRUISER]</div>
-              <div class="ship-desc">Heavy flagship. 180 Max Shield and automatic magnetic gravity suction.</div>
-              <div class="ship-specs">
-                <span class="spec-pill">SHIELD: 180</span>
-                <span class="spec-pill">MAGNET: 220</span>
-              </div>
+            <div class="compact-ship-details">
+              <div class="compact-ship-name" style="color: #fbbf24;">Titan Dreadnought</div>
+              <div class="compact-ship-role" style="color: #fbbf24;">[CORONA CRUISER]</div>
+              <div class="compact-ship-stats">SHIELD: 180 &bull; MAGNET AURA</div>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Orbital Mechanics Features Deck -->
+      <!-- Bottom Actions: Primary Direct Start Button & Auxiliary Options -->
+      <div class="start-primary-actions">
+        <button class="btn-primary start-main-btn" id="startBtn">
+          ▶ START GAME
+        </button>
+        <button class="btn-secondary start-sub-btn" id="startCampaignBtn" style="border-color: rgba(245, 158, 11, 0.5); color: #fbbf24;">
+          ⭐ 10 EXPEDITIONS
+        </button>
+        <button class="btn-secondary start-sub-btn" id="startTasksBtn">
+          📋 DIRECTIVES
+        </button>
+        <button class="btn-secondary start-sub-btn" id="startCodexBtn">
+          🪐 CODEX
+        </button>
+        <button class="btn-secondary start-sub-btn" id="startHowToPlayBtn">
+          ℹ️ MANUAL
+        </button>
+        <button class="orbkit-icon-btn" id="startSettingsBtn" style="padding: 0 16px; border-radius: 8px;" title="Flight Settings">⚙️</button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- How to Play Flight Manual Modal (Opened via Manual button) -->
+  <div id="howToPlayModal" class="screen-overlay hidden">
+    <div class="orbkit-modal ui-interactive" style="max-width: 680px;">
+      <div class="modal-header">
+        <div class="card-pill">
+          <span class="live-indicator"></span>
+          <span>FLIGHT TRAINING MANUAL</span>
+        </div>
+        <h1 class="modal-title" style="font-size: 26px; margin: 6px 0;">HOW TO FLY</h1>
+        <p class="modal-subtitle">MASTER ORBITAL MECHANICS &amp; RELATIVISTIC ESCAPE</p>
+      </div>
+
       <div class="features-grid">
         <div class="feature-box">
           <div class="feature-title">🌌 ORBITAL SLINGSHOT</div>
-          <div class="feature-desc">Hold <strong>Space</strong> or <strong>Touch</strong> near a star to lock tether. Orbit into tangential release for maximum slingshot velocity.</div>
+          <div class="feature-desc">Hold <strong>Space</strong>, <strong>Left Click</strong>, or <strong>Touch</strong> near a star to lock tether. Orbit into tangential release for maximum slingshot velocity.</div>
         </div>
         <div class="feature-box">
           <div class="feature-title">⚡ DYNAMIC TRAJECTORY</div>
@@ -325,12 +338,8 @@
         </div>
       </div>
 
-      <div class="modal-actions-row">
-        <button class="btn-primary campaign-btn" id="startCampaignBtn" style="flex: 2; background: linear-gradient(135deg, #f59e0b, #ea580c); border-color: #f59e0b; font-weight: 800; letter-spacing: 0.05em;">⭐ 10 EXPEDITIONS [CAMPAIGN]</button>
-        <button class="btn-secondary" id="startBtn" style="flex: 1.4;">♾️ ENDLESS RUN</button>
-        <button class="btn-secondary" id="startTasksBtn" style="flex: 0.9;">📋 DIRECTIVES</button>
-        <button class="btn-secondary" id="startCodexBtn" style="flex: 0.9;">🪐 CODEX</button>
-        <button class="orbkit-icon-btn" id="startSettingsBtn" style="padding: 0 16px; border-radius: 8px;" title="Flight Settings">⚙️</button>
+      <div class="modal-actions-row" style="margin-top: 18px;">
+        <button class="btn-primary" id="closeHowToPlayBtn" style="flex: 1;">ACKNOWLEDGE // RETURN TO HANGAR</button>
       </div>
     </div>
   </div>

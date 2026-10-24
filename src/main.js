@@ -59,6 +59,11 @@ if (document.readyState === 'loading') {
   boot();
 }
 
+// Request landscape orientation lock when supported
+if (typeof screen !== 'undefined' && screen.orientation && typeof screen.orientation.lock === 'function') {
+  screen.orientation.lock('landscape').catch(() => {});
+}
+
 // iOS WebKit & Android user interaction audio unlock
 const unlockAudio = () => {
   if (window.sounds && typeof window.sounds.resume === 'function') {

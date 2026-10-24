@@ -216,7 +216,12 @@ class Game {
         });
 
         window.addEventListener('keydown', (e) => {
-            if (e.code === 'Space') {
+            if (this.state === 'MENU' && (e.code === 'Space' || e.code === 'Enter')) {
+                e.preventDefault();
+                console.log('🚀 Keyboard start triggered!');
+                this.startGame();
+                return;
+            } else if (e.code === 'Space') {
                 e.preventDefault();
                 if (this.state === 'PLAYING' && !this.input.tetherHeld) {
                     this.input.tetherHeld = true;
