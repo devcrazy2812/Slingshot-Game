@@ -58,3 +58,5 @@ ios/App/App/public/
 
 # Temporary Scratch Files
 scratch/
+
+.vercel
