@@ -14,5 +14,28 @@
       "type": "image/png",
       "purpose": "any maskable"
     }
+  ],
+  "screenshots": [
+    {
+      "src": "/og-image.png",
+      "sizes": "1200x630",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Slingshot: Event Horizon Overview"
+    },
+    {
+      "src": "/screenshot-gameplay.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Relativistic Orbital Slingshot Gameplay"
+    },
+    {
+      "src": "/screenshot-landscape.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Vessel Hangar & Star System Expeditions"
+    }
   ]
 }
