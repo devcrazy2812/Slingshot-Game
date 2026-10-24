@@ -46,27 +46,20 @@ export class Particle {
 
     draw(ctx) {
         if (this.alpha <= 0) return;
-        ctx.save();
         ctx.globalAlpha = this.alpha;
-
-        if (this.glow) {
-            ctx.shadowColor = this.color;
-            ctx.shadowBlur = Math.min(16, this.size * 3);
-        }
-
         ctx.fillStyle = this.color;
 
         if (this.type === 'spark') {
+            ctx.save();
             ctx.translate(this.x, this.y);
             ctx.rotate(this.rotation);
             ctx.fillRect(-this.size, -this.size * 0.3, this.size * 2, this.size * 0.6);
+            ctx.restore();
         } else {
             ctx.beginPath();
             ctx.arc(this.x, this.y, Math.max(0.6, this.size), 0, Math.PI * 2);
             ctx.fill();
         }
-
-        ctx.restore();
     }
 }
 
@@ -203,7 +196,7 @@ export class ParticleSystem {
 
     // Accretion disk matter ingestion streams
     emitAccretionMatter(horizonX, viewportHeight, centerY) {
-        if (this.particles.length > 900) return;
+        if (this.particles.length > 180) return;
         const y = centerY + (Math.random() - 0.5) * viewportHeight * 1.6;
         const x = horizonX + Math.random() * 180 + 20;
         const vx = -(Math.random() * 4.5 + 3.0);
@@ -325,8 +318,6 @@ export class ParticleSystem {
 
             ctx.strokeStyle = trailColor;
             ctx.lineWidth = latest.isBoosting ? 3.5 : 2.0;
-            ctx.shadowColor = trailColor;
-            ctx.shadowBlur = 12;
             ctx.stroke();
         }
 

@@ -230,16 +230,12 @@ export class Ship {
             ctx.save();
             // Port wingtip: Red
             ctx.fillStyle = '#ff0055';
-            ctx.shadowColor = '#ff0055';
-            ctx.shadowBlur = 8;
             ctx.beginPath();
             ctx.arc(-8, -12, 2.5, 0, Math.PI * 2);
             ctx.fill();
 
             // Starboard wingtip: Green
             ctx.fillStyle = '#22c55e';
-            ctx.shadowColor = '#22c55e';
-            ctx.shadowBlur = 8;
             ctx.beginPath();
             ctx.arc(-8, 12, 2.5, 0, Math.PI * 2);
             ctx.fill();
@@ -271,8 +267,6 @@ export class Ship {
         ctx.strokeStyle = `rgba(0, 247, 255, ${shieldAlpha + 0.25})`;
         ctx.fillStyle = `rgba(0, 247, 255, ${shieldAlpha * 0.2})`;
         ctx.lineWidth = 1.5;
-        ctx.shadowColor = '#00f7ff';
-        ctx.shadowBlur = 10;
 
         ctx.beginPath();
         ctx.arc(0, 0, shieldRadius, 0, Math.PI * 2);
@@ -706,8 +700,6 @@ export class CelestialBody {
         ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
         ctx.textAlign = 'center';
         ctx.fillStyle = '#ffffff';
-        ctx.shadowColor = this.color;
-        ctx.shadowBlur = 8;
         const icon = pd.category === 'solar' ? '🪐' : '✨';
         ctx.fillText(`${icon} ${this.name.toUpperCase()}`, this.x, this.y + this.radius + 18);
         ctx.restore();
@@ -799,8 +791,6 @@ export class CelestialBody {
 
         ctx.strokeStyle = bridgeGrad;
         ctx.lineWidth = 8 + Math.sin(time) * 3;
-        ctx.shadowColor = '#38bdf8';
-        ctx.shadowBlur = 18;
 
         ctx.beginPath();
         ctx.moveTo(this.x, this.y);
@@ -918,8 +908,6 @@ export class Wormhole {
         for (let r = this.radius; r > 8; r -= 5) {
             ctx.strokeStyle = (r % 10 === 0) ? '#00f7ff' : '#a855f7';
             ctx.lineWidth = 2.5;
-            ctx.shadowColor = ctx.strokeStyle;
-            ctx.shadowBlur = 12;
 
             ctx.beginPath();
             ctx.arc(0, 0, r, 0, Math.PI * 1.6);
@@ -1123,10 +1111,8 @@ export class EventHorizon {
 
         // 2. Gravitational Lensing Halo (Photon Ring)
         ctx.globalCompositeOperation = 'screen';
-        ctx.strokeStyle = 'rgba(255, 200, 50, 0.7)';
-        ctx.lineWidth = 4;
-        ctx.shadowColor = '#ff5500';
-        ctx.shadowBlur = 25;
+        ctx.strokeStyle = 'rgba(255, 200, 50, 0.85)';
+        ctx.lineWidth = 3.5;
 
         ctx.beginPath();
         for (let i = 0; i <= steps; i++) {

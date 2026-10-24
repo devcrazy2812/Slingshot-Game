@@ -115,21 +115,25 @@ export class NebulaRenderer {
                         ctx.globalAlpha = s.baseAlpha * twinkle;
                         ctx.fillStyle = s.color;
 
-                        ctx.beginPath();
-                        ctx.arc(sx, sy, s.size, 0, Math.PI * 2);
-                        ctx.fill();
-
-                        // Anamorphic 4-point starburst spikes on prominent stars
-                        if (s.hasSpikes && s.size > 2.0) {
-                            ctx.strokeStyle = s.color;
-                            ctx.lineWidth = 1;
-                            const spikeLen = s.size * 3.5;
+                        if (s.size <= 1.6) {
+                            ctx.fillRect(sx - s.size * 0.5, sy - s.size * 0.5, s.size, s.size);
+                        } else {
                             ctx.beginPath();
-                            ctx.moveTo(sx - spikeLen, sy);
-                            ctx.lineTo(sx + spikeLen, sy);
-                            ctx.moveTo(sx, sy - spikeLen);
-                            ctx.lineTo(sx, sy + spikeLen);
-                            ctx.stroke();
+                            ctx.arc(sx, sy, s.size, 0, Math.PI * 2);
+                            ctx.fill();
+
+                            // Anamorphic 4-point starburst spikes on prominent stars
+                            if (s.hasSpikes && s.size > 2.0) {
+                                ctx.strokeStyle = s.color;
+                                ctx.lineWidth = 1;
+                                const spikeLen = s.size * 3.5;
+                                ctx.beginPath();
+                                ctx.moveTo(sx - spikeLen, sy);
+                                ctx.lineTo(sx + spikeLen, sy);
+                                ctx.moveTo(sx, sy - spikeLen);
+                                ctx.lineTo(sx, sy + spikeLen);
+                                ctx.stroke();
+                            }
                         }
                     }
                 }

@@ -72,6 +72,8 @@ html, body {
   display: block;
   cursor: crosshair;
   z-index: 2;
+  touch-action: none;
+  transform: translateZ(0);
 }
 
 /* CRT scanlines effect */
@@ -89,6 +91,8 @@ html, body {
   background-size: 100% 4px;
   z-index: 4;
   opacity: 0.45;
+  transform: translateZ(0);
+  pointer-events: none;
 }
 
 /* Orbkit Glassmorphic Cards & Badges */
@@ -101,6 +105,7 @@ html, body {
   padding: 12px 18px;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.05);
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transform: translateZ(0);
 }
 
 .card-pill {
@@ -1735,23 +1740,23 @@ html, body {
   inset: 0;
   pointer-events: none;
   z-index: 45;
-  box-shadow: inset 0 0 70px rgba(239, 68, 68, 0.55), inset 0 0 140px rgba(220, 38, 38, 0.35);
+  box-shadow: inset 0 0 60px rgba(239, 68, 68, 0.65), inset 0 0 120px rgba(220, 38, 38, 0.35);
   animation: horizonPulseAlarm 0.85s infinite alternate ease-in-out;
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
   align-items: center;
   padding-top: max(24px, env(safe-area-inset-top, 24px));
+  will-change: opacity;
+  transform: translateZ(0);
 }
 
 @keyframes horizonPulseAlarm {
   0% {
-    box-shadow: inset 0 0 40px rgba(239, 68, 68, 0.3);
-    opacity: 0.6;
+    opacity: 0.35;
   }
   100% {
-    box-shadow: inset 0 0 90px rgba(239, 68, 68, 0.85), inset 0 0 180px rgba(185, 28, 28, 0.5);
-    opacity: 1;
+    opacity: 0.95;
   }
 }
 

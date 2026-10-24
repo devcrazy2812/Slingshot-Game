@@ -13,7 +13,7 @@ export class PhysicsEngine {
         this.maxSpeed = Config.physics.maxSpeed || 950; // px/sec
         this.minSpeed = Config.physics.minSpeed || 150; // px/sec
         this.baseMu = Config.physics.baseMu || 650000; // Gravitational parameter (G * M)
-        this.trajectorySteps = 60;
+        this.trajectorySteps = 35; // Optimized from 60 to maintain locked 120 FPS
         this.trajectoryDt = 1 / 30; // 30Hz trajectory preview sampling
     }
 

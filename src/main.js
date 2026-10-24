@@ -19,12 +19,19 @@ function initOrbPreviews() {
   const cVanguard = document.getElementById('orbCanvasVanguard');
   const cPhantom = document.getElementById('orbCanvasPhantom');
   const cDreadnought = document.getElementById('orbCanvasDreadnought');
+  const startScreen = document.getElementById('startScreen');
 
   const ctxVanguard = cVanguard?.getContext('2d');
   const ctxPhantom = cPhantom?.getContext('2d');
   const ctxDreadnought = cDreadnought?.getContext('2d');
 
   function renderOrbs(t) {
+    // Suspend orb animation when menu is hidden to save GPU cycles and eliminate in-game lag
+    if (startScreen && startScreen.classList.contains('hidden')) {
+      requestAnimationFrame(renderOrbs);
+      return;
+    }
+
     const time = t * 0.0015;
 
     if (ctxVanguard && cVanguard) {

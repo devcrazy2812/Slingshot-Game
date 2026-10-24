@@ -109,14 +109,39 @@ export class Game {
         this.twinTrail = [];
         this.chaosTime = 0;
         this.chaosLogTimer = 0;
+        this.lastHudUpdate = 0;
+        this.lastTrajCalc = 0;
+        this.cachedTraj = null;
 
         this.initCanvas();
+        this.initHUDCache();
         this.bindEvents();
         this.bindShipSelector();
         this.updateHUD();
         this.updateHangarPilotStrip();
 
         requestAnimationFrame((t) => this.loop(t));
+    }
+
+    initHUDCache() {
+        this.hudElements = {
+            hudSpeed: document.getElementById('hudSpeed'),
+            hudDistance: document.getElementById('hudDistance'),
+            hudScore: document.getElementById('hudScore'),
+            hudCombo: document.getElementById('hudCombo'),
+            hudHorizonGap: document.getElementById('hudHorizonGap'),
+            fuelBar: document.getElementById('fuelBar'),
+            shieldBar: document.getElementById('shieldBar'),
+            phaseCooldown: document.getElementById('phaseCooldown'),
+            dilationCooldown: document.getElementById('dilationCooldown'),
+            horizonMeter: document.getElementById('horizonProximityMeter'),
+            hudGoal: document.getElementById('campaignHudGoal'),
+            hudPct: document.getElementById('campaignHudPct'),
+            barFill: document.getElementById('campaignBarFill'),
+            hudSlingshots: document.getElementById('campaignHudSlingshots'),
+            hudTimeDilation: document.getElementById('hudTimeDilation'),
+            warningOverlay: document.getElementById('horizonWarningOverlay')
+        };
     }
 
     updateHangarPilotStrip() {
@@ -1664,8 +1689,6 @@ export class Game {
         if (this.ship.isTethered) {
             const currentSpeed = Math.sqrt(this.ship.vx * this.ship.vx + this.ship.vy * this.ship.vy);
             sounds.startTetherHum(180 + (currentSpeed / 4));
-        } else {
-            sounds.stopTetherHum();
         }
 
         this.ship.update(dt);
@@ -1898,70 +1921,56 @@ export class Game {
 
         this.generateWorld(this.ship.x + 2800);
         this.cullWorld();
-
-        this.updateHUD();
     }
 
     updateHUD() {
+        if (!this.hudElements) this.initHUDCache();
+        const el = this.hudElements;
+
         const speed = Math.sqrt(this.ship.vx * this.ship.vx + this.ship.vy * this.ship.vy);
         const speedFraction = (speed / 600).toFixed(2);
         const distanceLY = Math.floor(this.ship.x / 100);
         const horizonGap = Math.max(0, Math.floor((this.ship.x - this.horizon.x) / 10));
 
-        const hudSpeed = document.getElementById('hudSpeed');
-        if (hudSpeed) hudSpeed.innerText = `${speedFraction} c`;
+        if (el.hudSpeed) el.hudSpeed.innerText = `${speedFraction} c`;
+        if (el.hudDistance) el.hudDistance.innerText = `${distanceLY.toLocaleString()} LY`;
+        if (el.hudScore) el.hudScore.innerText = Math.floor(this.score).toLocaleString();
+        if (el.hudCombo) el.hudCombo.innerText = `${this.combo}x`;
+        if (el.hudHorizonGap) el.hudHorizonGap.innerText = `${horizonGap} AU`;
 
-        const hudDistance = document.getElementById('hudDistance');
-        if (hudDistance) hudDistance.innerText = `${distanceLY.toLocaleString()} LY`;
+        if (el.fuelBar) el.fuelBar.style.width = `${(this.ship.fuel / this.ship.maxFuel) * 100}%`;
+        if (el.shieldBar) el.shieldBar.style.width = `${(this.ship.shield / this.ship.maxShield) * 100}%`;
 
-        const hudScore = document.getElementById('hudScore');
-        if (hudScore) hudScore.innerText = Math.floor(this.score).toLocaleString();
-
-        const hudCombo = document.getElementById('hudCombo');
-        if (hudCombo) hudCombo.innerText = `${this.combo}x`;
-
-        const hudHorizonGap = document.getElementById('hudHorizonGap');
-        if (hudHorizonGap) hudHorizonGap.innerText = `${horizonGap} AU`;
-
-        const fuelBar = document.getElementById('fuelBar');
-        if (fuelBar) fuelBar.style.width = `${(this.ship.fuel / this.ship.maxFuel) * 100}%`;
-
-        const shieldBar = document.getElementById('shieldBar');
-        if (shieldBar) shieldBar.style.width = `${(this.ship.shield / this.ship.maxShield) * 100}%`;
-
-        const phaseCooldownEl = document.getElementById('phaseCooldown');
-        if (phaseCooldownEl) {
+        if (el.phaseCooldown) {
             if (this.ship.phaseShiftActive) {
-                phaseCooldownEl.innerText = `ACTIVE (${this.ship.phaseShiftTimer.toFixed(1)}s)`;
-                phaseCooldownEl.style.color = '#00f7ff';
+                el.phaseCooldown.innerText = `ACTIVE (${this.ship.phaseShiftTimer.toFixed(1)}s)`;
+                el.phaseCooldown.style.color = '#00f7ff';
             } else if (this.ship.phaseShiftCooldown > 0) {
-                phaseCooldownEl.innerText = `${Math.ceil(this.ship.phaseShiftCooldown)}s`;
-                phaseCooldownEl.style.color = '#94a3b8';
+                el.phaseCooldown.innerText = `${Math.ceil(this.ship.phaseShiftCooldown)}s`;
+                el.phaseCooldown.style.color = '#94a3b8';
             } else {
-                phaseCooldownEl.innerText = 'READY [SHIFT]';
-                phaseCooldownEl.style.color = '#22c55e';
+                el.phaseCooldown.innerText = 'READY [SHIFT]';
+                el.phaseCooldown.style.color = '#22c55e';
             }
         }
 
-        const dilationCooldownEl = document.getElementById('dilationCooldown');
-        if (dilationCooldownEl) {
+        if (el.dilationCooldown) {
             if (this.ship.timeDilationActive) {
-                dilationCooldownEl.innerText = `ACTIVE (${this.ship.timeDilationTimer.toFixed(1)}s)`;
-                dilationCooldownEl.style.color = '#a855f7';
+                el.dilationCooldown.innerText = `ACTIVE (${this.ship.timeDilationTimer.toFixed(1)}s)`;
+                el.dilationCooldown.style.color = '#a855f7';
             } else if (this.ship.timeDilationCooldown > 0) {
-                dilationCooldownEl.innerText = `${Math.ceil(this.ship.timeDilationCooldown)}s`;
-                dilationCooldownEl.style.color = '#94a3b8';
+                el.dilationCooldown.innerText = `${Math.ceil(this.ship.timeDilationCooldown)}s`;
+                el.dilationCooldown.style.color = '#94a3b8';
             } else {
-                dilationCooldownEl.innerText = 'READY [F]';
-                dilationCooldownEl.style.color = '#22c55e';
+                el.dilationCooldown.innerText = 'READY [F]';
+                el.dilationCooldown.style.color = '#22c55e';
             }
         }
 
-        const horizonMeter = document.getElementById('horizonProximityMeter');
-        if (horizonMeter) {
+        if (el.horizonMeter) {
             const dangerRatio = Math.max(0, Math.min(1, 1 - (horizonGap / 60)));
-            horizonMeter.style.opacity = (dangerRatio > 0.4 ? dangerRatio : 0.2).toString();
-            horizonMeter.style.boxShadow = dangerRatio > 0.6 ? '0 0 15px #ff0055' : 'none';
+            el.horizonMeter.style.opacity = (dangerRatio > 0.4 ? dangerRatio : 0.2).toString();
+            el.horizonMeter.style.boxShadow = dangerRatio > 0.6 ? '0 0 15px #ff0055' : 'none';
         }
 
         // Campaign Mission HUD Bar & Goal Tracker
@@ -1970,17 +1979,10 @@ export class Game {
             const curDist = Math.max(0, Math.floor(this.ship.x));
             const pct = Math.min(100, Math.floor((curDist / lvl.targetDistance) * 100));
 
-            const hudGoal = document.getElementById('campaignHudGoal');
-            if (hudGoal) hudGoal.innerText = `DIST: ${Math.floor(this.ship.x / 100)} / ${Math.floor(lvl.targetDistance / 100)} LY`;
-
-            const hudPct = document.getElementById('campaignHudPct');
-            if (hudPct) hudPct.innerText = `${pct}%`;
-
-            const barFill = document.getElementById('campaignBarFill');
-            if (barFill) barFill.style.width = `${pct}%`;
-
-            const hudSlingshots = document.getElementById('campaignHudSlingshots');
-            if (hudSlingshots) hudSlingshots.innerText = `PERFECT SLINGSHOTS: ${this.perfectSlingshots} / ${lvl.requiredPerfectSlingshots}`;
+            if (el.hudGoal) el.hudGoal.innerText = `DIST: ${Math.floor(this.ship.x / 100)} / ${Math.floor(lvl.targetDistance / 100)} LY`;
+            if (el.hudPct) el.hudPct.innerText = `${pct}%`;
+            if (el.barFill) el.barFill.style.width = `${pct}%`;
+            if (el.hudSlingshots) el.hudSlingshots.innerText = `PERFECT SLINGSHOTS: ${this.perfectSlingshots} / ${lvl.requiredPerfectSlingshots}`;
         }
     }
 
@@ -1989,37 +1991,42 @@ export class Game {
         ctx.save();
         ctx.globalCompositeOperation = 'screen';
 
-        const cellSize = Config.visuals.spacetimeGridCellSize || 95;
+        const cellSize = 120;
         const startX = Math.floor(viewLeft / cellSize) * cellSize;
         const endX = Math.ceil(viewRight / cellSize) * cellSize;
         const startY = Math.floor(viewTop / cellSize) * cellSize;
         const endY = Math.ceil(viewBottom / cellSize) * cellSize;
 
         // Pre-filter nearby stars to keep frame rate locked at 120 fps
-        const nearbyStars = this.stars.filter(s => s.x > viewLeft - 300 && s.x < viewRight + 300);
+        const nearbyStars = this.stars.filter(s => s.x > viewLeft - 250 && s.x < viewRight + 250);
 
-        // 1. Equipotential Gravity Well Contours around stars
-        for (const s of nearbyStars) {
-            const numContours = 3;
-            for (let k = 1; k <= numContours; k++) {
-                const cRadius = s.radius * (1.2 + k * 1.1);
-                ctx.strokeStyle = `rgba(0, 247, 255, ${0.28 / k})`;
-                ctx.lineWidth = 1.2;
-                ctx.beginPath();
-                ctx.arc(s.x, s.y, cRadius, 0, Math.PI * 2);
-                ctx.stroke();
+        // 1. Batched Equipotential Gravity Well Contours around stars
+        if (nearbyStars.length > 0) {
+            ctx.strokeStyle = 'rgba(0, 247, 255, 0.2)';
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            for (const s of nearbyStars) {
+                ctx.moveTo(s.x + s.radius * 2.2, s.y);
+                ctx.arc(s.x, s.y, s.radius * 2.2, 0, Math.PI * 2);
+                ctx.moveTo(s.x + s.radius * 3.4, s.y);
+                ctx.arc(s.x, s.y, s.radius * 3.4, 0, Math.PI * 2);
             }
+            ctx.stroke();
         }
 
         const warpPoint = (x, y) => {
             let wx = x;
             let wy = y;
-            for (const s of nearbyStars) {
+            for (let i = 0; i < nearbyStars.length; i++) {
+                const s = nearbyStars[i];
                 const dx = s.x - x;
                 const dy = s.y - y;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                if (dist < s.gravityRadius && dist > 1) {
-                    const pull = Math.min(32, (s.radius * 35) / (dist + 40));
+                // Fast bounding-box rejection before Math.sqrt
+                if (Math.abs(dx) > s.gravityRadius || Math.abs(dy) > s.gravityRadius) continue;
+                const rSq = dx * dx + dy * dy;
+                if (rSq < s.gravityRadius * s.gravityRadius && rSq > 4) {
+                    const dist = Math.sqrt(rSq);
+                    const pull = Math.min(28, (s.radius * 30) / (dist + 40));
                     wx += (dx / dist) * pull;
                     wy += (dy / dist) * pull;
                 }
@@ -2027,11 +2034,12 @@ export class Game {
             return { x: wx, y: wy };
         };
 
-        ctx.strokeStyle = 'rgba(0, 180, 255, 0.22)';
+        // 2. Single-pass batched spacetime mesh rendering
+        ctx.strokeStyle = 'rgba(0, 180, 255, 0.20)';
         ctx.lineWidth = 1;
+        ctx.beginPath();
 
         for (let y = startY; y <= endY; y += cellSize) {
-            ctx.beginPath();
             let first = true;
             for (let x = startX; x <= endX; x += cellSize) {
                 const wp = warpPoint(x, y);
@@ -2042,11 +2050,9 @@ export class Game {
                     ctx.lineTo(wp.x, wp.y);
                 }
             }
-            ctx.stroke();
         }
 
         for (let x = startX; x <= endX; x += cellSize) {
-            ctx.beginPath();
             let first = true;
             for (let y = startY; y <= endY; y += cellSize) {
                 const wp = warpPoint(x, y);
@@ -2057,9 +2063,9 @@ export class Game {
                     ctx.lineTo(wp.x, wp.y);
                 }
             }
-            ctx.stroke();
         }
 
+        ctx.stroke();
         ctx.restore();
     }
 
@@ -2202,49 +2208,50 @@ export class Game {
 
         // Draw Color-Coded Trajectory Prediction Arc
         if (this.state === 'PLAYING') {
-            const traj = this.physics.calculateTrajectory(this.ship, this.stars, this.asteroids);
-            if (traj.points.length > 1) {
+            const now = performance.now();
+            if (!this.lastTrajCalc || now - this.lastTrajCalc > 32) {
+                this.cachedTraj = this.physics.calculateTrajectory(this.ship, this.stars, this.asteroids);
+                this.lastTrajCalc = now;
+            }
+            const traj = this.cachedTraj;
+            if (traj && traj.points.length > 1) {
                 this.ctx.save();
                 if (traj.status === 'hazard') {
-                    this.ctx.strokeStyle = 'rgba(255, 50, 70, 0.85)';
-                    this.ctx.lineWidth = 2.2;
+                    this.ctx.strokeStyle = 'rgba(255, 50, 70, 0.95)';
+                    this.ctx.lineWidth = 2.4;
                     this.ctx.setLineDash([4, 4]);
-                    this.ctx.shadowColor = '#ff0055';
-                    this.ctx.shadowBlur = 10;
                 } else if (traj.status === 'perfect') {
-                    this.ctx.strokeStyle = 'rgba(255, 215, 0, 0.9)';
+                    this.ctx.strokeStyle = 'rgba(255, 215, 0, 0.95)';
                     this.ctx.lineWidth = 2.8;
                     this.ctx.setLineDash([8, 4]);
-                    this.ctx.shadowColor = '#ffd700';
-                    this.ctx.shadowBlur = 14;
                 } else {
-                    this.ctx.strokeStyle = this.ship.isTethered ? 'rgba(0, 255, 255, 0.65)' : 'rgba(255, 255, 255, 0.35)';
+                    this.ctx.strokeStyle = this.ship.isTethered ? 'rgba(0, 255, 255, 0.75)' : 'rgba(255, 255, 255, 0.40)';
                     this.ctx.lineWidth = 1.8;
                     this.ctx.setLineDash([6, 8]);
                 }
 
                 this.ctx.beginPath();
                 this.ctx.moveTo(this.ship.x, this.ship.y);
-                for (const pt of traj.points) {
+                for (let i = 0; i < traj.points.length; i++) {
+                    const pt = traj.points[i];
                     this.ctx.lineTo(pt.x, pt.y);
                 }
                 this.ctx.stroke();
 
-                // Traveling energetic laser pulse nodes along trajectory
-                const pulseTime = Date.now() * 0.003;
+                // Traveling energetic laser pulse nodes along trajectory (additive blend, no shadowBlur)
+                const pulseTime = now * 0.003;
                 const pulseNodes = 3;
+                this.ctx.fillStyle = (traj.status === 'perfect') ? '#ffd700' : '#ffffff';
+                this.ctx.beginPath();
                 for (let k = 0; k < pulseNodes; k++) {
                     const pIdx = Math.floor(((pulseTime + k / pulseNodes) % 1.0) * (traj.points.length - 1));
                     const pt = traj.points[pIdx];
                     if (pt) {
-                        this.ctx.fillStyle = '#ffffff';
-                        this.ctx.shadowColor = (traj.status === 'perfect') ? '#ffd700' : '#00f7ff';
-                        this.ctx.shadowBlur = 12;
-                        this.ctx.beginPath();
+                        this.ctx.moveTo(pt.x + 3.5, pt.y);
                         this.ctx.arc(pt.x, pt.y, 3.5, 0, Math.PI * 2);
-                        this.ctx.fill();
                     }
                 }
+                this.ctx.fill();
 
                 this.ctx.restore();
             }
@@ -2328,8 +2335,6 @@ export class Game {
             this.ctx.fillStyle = 'rgba(0, 247, 255, 0.2)';
             this.ctx.strokeStyle = '#00f7ff';
             this.ctx.lineWidth = 1.8;
-            this.ctx.shadowColor = '#00f7ff';
-            this.ctx.shadowBlur = 10;
 
             this.ctx.beginPath();
             this.ctx.moveTo(17, 0);
@@ -2355,8 +2360,6 @@ export class Game {
             this.ctx.font = 'bold 18px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
             this.ctx.textAlign = 'center';
             this.ctx.fillStyle = ft.color;
-            this.ctx.shadowColor = ft.color;
-            this.ctx.shadowBlur = 12;
             this.ctx.fillText(ft.text, ft.x, ft.y);
             this.ctx.restore();
         }
@@ -2371,16 +2374,30 @@ export class Game {
     }
 
     loop(currentTime) {
-        const elapsed = Math.min((currentTime - this.lastTime) / 1000, 0.1);
+        const elapsed = Math.min((currentTime - this.lastTime) / 1000, 0.05);
         this.lastTime = currentTime;
         this.accumulator += elapsed;
 
-        while (this.accumulator >= this.DT) {
+        // Cap sub-steps to prevent physics spiral of death
+        let steps = 0;
+        while (this.accumulator >= this.DT && steps < 2) {
             this.update(this.DT);
             this.accumulator -= this.DT;
+            steps++;
+        }
+        if (this.accumulator >= this.DT) {
+            this.accumulator = 0;
         }
 
         this.draw();
+
+        // Throttle HUD updates to smooth 20 FPS (every ~45ms) to prevent DOM thrashing
+        if (this.state === 'PLAYING') {
+            if (!this.lastHudUpdate || currentTime - this.lastHudUpdate > 45) {
+                this.updateHUD();
+                this.lastHudUpdate = currentTime;
+            }
+        }
 
         requestAnimationFrame((t) => this.loop(t));
     }
