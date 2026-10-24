@@ -6,7 +6,7 @@
   "cleanUrls": true,
   "rewrites": [
     {
-      "source": "/((?!card-preview|button-preview|landing-pages|assets|icons|splash|favicons).*)",
+      "source": "/((?!card-preview|button-preview|privacy-policy|landing-pages|assets|icons|splash|favicons).*)",
       "destination": "/index.html"
     }
   ],

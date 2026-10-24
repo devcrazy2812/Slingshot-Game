@@ -60,3 +60,7 @@ ios/App/App/public/
 scratch/
 
 .vercel
+
+# Keystores & Signing Keys
+*.jks
+*.keystore

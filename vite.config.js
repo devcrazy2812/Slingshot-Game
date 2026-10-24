@@ -19,7 +19,8 @@ export default defineConfig({
       input: {
         main: path.resolve(__dirname, 'index.html'),
         card: path.resolve(__dirname, 'card-preview.html'),
-        button: path.resolve(__dirname, 'button-preview.html')
+        button: path.resolve(__dirname, 'button-preview.html'),
+        privacy: path.resolve(__dirname, 'privacy-policy.html')
       }
     }
   },
