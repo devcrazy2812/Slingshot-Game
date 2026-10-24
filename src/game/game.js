@@ -388,11 +388,15 @@ export class Game {
 
         const startBtn = document.getElementById('startBtn');
         if (startBtn) {
+            let lastStartTrigger = 0;
             const handleStart = (e) => {
-                if (e) {
+                if (e && e.cancelable) {
                     e.preventDefault();
                     e.stopPropagation();
                 }
+                const now = Date.now();
+                if (now - lastStartTrigger < 300) return;
+                lastStartTrigger = now;
                 console.log('🚀 Launch button triggered! Starting flight...');
                 this.startGame();
             };
@@ -810,108 +814,10 @@ export class Game {
     }
 
     startGame(levelId = null) {
-        if (this.probeScanTimeout) {
-            clearTimeout(this.probeScanTimeout);
-            this.probeScanTimeout = null;
-        }
-        if (typeof sounds !== 'undefined' && sounds) {
-            sounds.stopTetherHum();
-            sounds.init();
-            sounds.resume();
-        }
-        if (this.twin) {
-            this.removeChaosTwin();
-        }
-        if (this.planetSim) {
-            this.planetSim.stop();
-        }
+        console.log('startGame() called with levelId:', levelId);
+
+        // Immediate visual UI transition: guarantee menus close and HUD opens
         this.state = 'PLAYING';
-        this.score = 0;
-        this.combo = 1;
-        this.comboTimer = 6.0;
-        this.maxSpeed = 0;
-        this.perfectSlingshots = 0;
-        this.worldGenX = 50;
-        this.planetSpawnCounter = 0;
-        this.campaignElapsedTime = 0;
-        this.sirenPulseTimer = 0;
-        this.tickingSoundTimer = 0;
-
-        this.stars = [];
-        this.asteroids = [];
-        this.wormholes = [];
-        this.collectibles = [];
-        this.floatingTexts = [];
-        this.particles.reset();
-
-        this.ship.setShipClass(this.selectedShipClass);
-        this.ship.reset(100, 0);
-        this.ship.vx = 340; // Forward velocity
-        this.ship.vy = 0;
-        this.horizon.reset();
-
-        // Configure Expedition Mode or Endless Run
-        let activeLevel = null;
-        if (levelId !== null && this.campaign) {
-            activeLevel = this.campaign.startLevel(levelId);
-        } else if (this.campaign) {
-            this.campaign.startEndlessMode();
-        }
-
-        const campaignHudPanel = document.getElementById('campaignHudPanel');
-        if (campaignHudPanel) {
-            if (activeLevel) {
-                campaignHudPanel.classList.remove('hidden');
-                const lvlTitle = document.getElementById('campaignHudLevel');
-                if (lvlTitle) lvlTitle.innerText = `EXPEDITION ${activeLevel.id < 10 ? '0' + activeLevel.id : activeLevel.id} // ${activeLevel.title}`;
-            } else {
-                campaignHudPanel.classList.add('hidden');
-            }
-        }
-
-        if (activeLevel) {
-            const pId = activeLevel.primaryPlanetId;
-            const primaryPlanet = (typeof ALL_PLANETS !== 'undefined' ? ALL_PLANETS : SOLAR_PLANETS).find(p => p.id === pId) || SOLAR_PLANETS[0];
-            const st1 = activeLevel.starTypes[0] || 'hypergiant';
-            const st2 = activeLevel.starTypes[1] || 'pulsar';
-
-            this.stars.push(new CelestialBody(420, 30, st1));
-            this.stars.push(new CelestialBody(780, -40, 'planet', primaryPlanet));
-            this.stars.push(new CelestialBody(1140, 50, st2));
-
-            if (activeLevel.targetPlanetId) {
-                const targetP = (typeof ALL_PLANETS !== 'undefined' ? ALL_PLANETS : SOLAR_PLANETS).find(p => p.id === activeLevel.targetPlanetId);
-                if (targetP) {
-                    this.stars.push(new CelestialBody(1500, -60, 'planet', targetP));
-                }
-            }
-
-            this.collectibles.push(new PhotonCore(250, 10));
-            this.collectibles.push(new PhotonCore(600, -10));
-            this.collectibles.push(new PhotonCore(950, 20));
-            this.worldGenX = 1500;
-        } else {
-            // Guaranteed welcoming starter constellation right ahead of player
-            this.stars.push(new CelestialBody(420, 30, 'hypergiant'));
-            this.stars.push(new CelestialBody(740, -40, 'pulsar'));
-
-            // Starter Mars planet within reach for immediate exploration or slingshot
-            const starterMars = SOLAR_PLANETS.find(p => p.id === 'mars') || SOLAR_PLANETS[0];
-            this.stars.push(new CelestialBody(1060, -60, 'planet', starterMars));
-
-            this.stars.push(new CelestialBody(1380, 50, 'binary'));
-            this.collectibles.push(new PhotonCore(250, 10));
-            this.collectibles.push(new PhotonCore(560, -10));
-            this.collectibles.push(new PhotonCore(880, 20));
-
-            this.worldGenX = 1380;
-        }
-        this.generateWorld(3000);
-
-        // Center camera immediately on the ship
-        this.camera.x = this.ship.x + 140;
-        this.camera.y = this.ship.y;
-
         const startScreen = document.getElementById('startScreen');
         if (startScreen) startScreen.classList.add('hidden');
 
@@ -942,10 +848,120 @@ export class Game {
         const warningOverlay = document.getElementById('horizonWarningOverlay');
         if (warningOverlay) warningOverlay.classList.add('hidden');
 
-        this.updateHangarPilotStrip();
-
         const hud = document.getElementById('hud');
         if (hud) hud.classList.remove('hidden');
+
+        try {
+            if (this.probeScanTimeout) {
+                clearTimeout(this.probeScanTimeout);
+                this.probeScanTimeout = null;
+            }
+            if (typeof sounds !== 'undefined' && sounds) {
+                try {
+                    sounds.stopTetherHum();
+                    sounds.init();
+                    sounds.resume();
+                } catch (audioErr) {
+                    console.warn('Audio initialization notice:', audioErr);
+                }
+            }
+            if (this.twin) {
+                this.removeChaosTwin();
+            }
+            if (this.planetSim) {
+                this.planetSim.stop();
+            }
+
+            this.score = 0;
+            this.combo = 1;
+            this.comboTimer = 6.0;
+            this.maxSpeed = 0;
+            this.perfectSlingshots = 0;
+            this.worldGenX = 50;
+            this.planetSpawnCounter = 0;
+            this.campaignElapsedTime = 0;
+            this.sirenPulseTimer = 0;
+            this.tickingSoundTimer = 0;
+
+            this.stars = [];
+            this.asteroids = [];
+            this.wormholes = [];
+            this.collectibles = [];
+            this.floatingTexts = [];
+            this.particles.reset();
+
+            this.ship.setShipClass(this.selectedShipClass);
+            this.ship.reset(100, 0);
+            this.ship.vx = 340; // Forward velocity
+            this.ship.vy = 0;
+            this.horizon.reset();
+
+            // Configure Expedition Mode or Endless Run
+            let activeLevel = null;
+            if (levelId !== null && this.campaign) {
+                activeLevel = this.campaign.startLevel(levelId);
+            } else if (this.campaign) {
+                this.campaign.startEndlessMode();
+            }
+
+            const campaignHudPanel = document.getElementById('campaignHudPanel');
+            if (campaignHudPanel) {
+                if (activeLevel) {
+                    campaignHudPanel.classList.remove('hidden');
+                    const lvlTitle = document.getElementById('campaignHudLevel');
+                    if (lvlTitle) lvlTitle.innerText = `EXPEDITION ${activeLevel.id < 10 ? '0' + activeLevel.id : activeLevel.id} // ${activeLevel.title}`;
+                } else {
+                    campaignHudPanel.classList.add('hidden');
+                }
+            }
+
+            if (activeLevel) {
+                const pId = activeLevel.primaryPlanetId;
+                const primaryPlanet = (typeof ALL_PLANETS !== 'undefined' ? ALL_PLANETS : SOLAR_PLANETS).find(p => p.id === pId) || SOLAR_PLANETS[0];
+                const st1 = activeLevel.starTypes[0] || 'hypergiant';
+                const st2 = activeLevel.starTypes[1] || 'pulsar';
+
+                this.stars.push(new CelestialBody(420, 30, st1));
+                this.stars.push(new CelestialBody(780, -40, 'planet', primaryPlanet));
+                this.stars.push(new CelestialBody(1140, 50, st2));
+
+                if (activeLevel.targetPlanetId) {
+                    const targetP = (typeof ALL_PLANETS !== 'undefined' ? ALL_PLANETS : SOLAR_PLANETS).find(p => p.id === activeLevel.targetPlanetId);
+                    if (targetP) {
+                        this.stars.push(new CelestialBody(1500, -60, 'planet', targetP));
+                    }
+                }
+
+                this.collectibles.push(new PhotonCore(250, 10));
+                this.collectibles.push(new PhotonCore(600, -10));
+                this.collectibles.push(new PhotonCore(950, 20));
+                this.worldGenX = 1500;
+            } else {
+                // Guaranteed welcoming starter constellation right ahead of player
+                this.stars.push(new CelestialBody(420, 30, 'hypergiant'));
+                this.stars.push(new CelestialBody(740, -40, 'pulsar'));
+
+                // Starter Mars planet within reach for immediate exploration or slingshot
+                const starterMars = SOLAR_PLANETS.find(p => p.id === 'mars') || SOLAR_PLANETS[0];
+                this.stars.push(new CelestialBody(1060, -60, 'planet', starterMars));
+
+                this.stars.push(new CelestialBody(1380, 50, 'binary'));
+                this.collectibles.push(new PhotonCore(250, 10));
+                this.collectibles.push(new PhotonCore(560, -10));
+                this.collectibles.push(new PhotonCore(880, 20));
+
+                this.worldGenX = 1380;
+            }
+            this.generateWorld(3000);
+
+            // Center camera immediately on the ship
+            this.camera.x = this.ship.x + 140;
+            this.camera.y = this.ship.y;
+
+            this.updateHangarPilotStrip();
+        } catch (err) {
+            console.error('CRITICAL: Error during startGame, state preserved at PLAYING:', err);
+        }
     }
 
     togglePause() {
@@ -2367,5 +2383,208 @@ export class Game {
         this.draw();
 
         requestAnimationFrame((t) => this.loop(t));
+    }
+
+    // =========================================================================
+    // INTERSTELLAR EXPEDITION CAMPAIGN & RANGER COCKPIT METHODS
+    // =========================================================================
+
+    openCampaignModal() {
+        this.renderCampaignGrid();
+        const screen = document.getElementById('campaignScreen');
+        if (screen) screen.classList.remove('hidden');
+    }
+
+    closeCampaignModal() {
+        const screen = document.getElementById('campaignScreen');
+        if (screen) screen.classList.add('hidden');
+    }
+
+    renderCampaignGrid() {
+        const grid = document.getElementById('campaignGrid');
+        const levelsList = typeof CAMPAIGN_LEVELS !== 'undefined' ? CAMPAIGN_LEVELS : [];
+        if (!grid || !this.campaign || !levelsList.length) return;
+        grid.innerHTML = '';
+
+        levelsList.forEach(lvl => {
+            const isUnlocked = lvl.id <= this.campaign.unlockedLevel;
+            const stars = this.campaign.levelStars[lvl.id] || 0;
+            const highScore = this.campaign.levelHighScores[lvl.id] || 0;
+            const isCompleted = stars > 0;
+
+            const card = document.createElement('div');
+            card.className = `campaign-card ${isUnlocked ? (isCompleted ? 'completed' : '') : 'locked'}`;
+
+            let starsHtml = '';
+            for (let s = 1; s <= 3; s++) {
+                starsHtml += `<span class="${s <= stars ? 'star-filled' : 'star-empty'}">★</span>`;
+            }
+
+            card.innerHTML = `
+                <div class="campaign-card-header">
+                    <span class="card-pill gold-pill" style="font-size: 9px; padding: 2px 7px;">EXPEDITION ${lvl.id < 10 ? '0' + lvl.id : lvl.id}</span>
+                    <div class="campaign-stars">${starsHtml}</div>
+                </div>
+                <div class="campaign-card-title">${lvl.title}</div>
+                <div style="font-family: var(--font-mono); font-size: 10px; color: #f59e0b; margin-bottom: 4px;">// ${lvl.subtitle}</div>
+                <div class="campaign-card-desc">${lvl.briefing}</div>
+                <div class="campaign-card-meta">
+                    <span class="campaign-meta-badge">TARGET: ${Math.floor(lvl.targetDistance / 100)} LY</span>
+                    <span class="campaign-meta-badge">REQ SLINGSHOTS: ${lvl.requiredPerfectSlingshots}</span>
+                    <span class="campaign-meta-badge">3★ TIME: &lt;${lvl.starTimes.threeStar}s</span>
+                </div>
+                <div class="campaign-card-footer">
+                    <span style="font-family: var(--font-mono); font-size: 10px; color: var(--color-fg-dim);">
+                        ${highScore > 0 ? 'BEST: <span class="gold-text">' + Math.floor(highScore).toLocaleString() + ' PTS</span>' : (isUnlocked ? 'READY FOR FLIGHT' : 'CLASSIFIED')}
+                    </span>
+                    ${isUnlocked ? `<button class="campaign-launch-btn" data-level="${lvl.id}">ENGAGE ▶</button>` : `<span style="font-family: var(--font-mono); font-size: 10px; color: #64748b;">🔒 LOCKED</span>`}
+                </div>
+            `;
+
+            if (isUnlocked) {
+                const btn = card.querySelector('.campaign-launch-btn');
+                if (btn) {
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        this.closeCampaignModal();
+                        this.startGame(lvl.id);
+                    });
+                }
+            }
+
+            grid.appendChild(card);
+        });
+    }
+
+    triggerLevelComplete(completion) {
+        this.state = 'PAUSED';
+        if (typeof sounds !== 'undefined') {
+            sounds.stopTetherHum();
+            if (sounds.playVictoryFanfare) sounds.playVictoryFanfare();
+        }
+        if (typeof haptics !== 'undefined' && haptics.wormholeWarp) {
+            haptics.wormholeWarp();
+        }
+
+        const warningOverlay = document.getElementById('horizonWarningOverlay');
+        if (warningOverlay) warningOverlay.classList.add('hidden');
+
+        const modal = document.getElementById('levelCompleteModal');
+        if (!modal) return;
+
+        const titleEl = document.getElementById('levelCompleteTitle');
+        if (titleEl) titleEl.innerText = `EXPEDITION ${completion.level.id < 10 ? '0' + completion.level.id : completion.level.id}: ${completion.level.title}`;
+
+        const starsEl = document.getElementById('levelCompleteStars');
+        if (starsEl) {
+            starsEl.innerHTML = '';
+            for (let i = 1; i <= 3; i++) {
+                const star = document.createElement('span');
+                star.className = `star-icon ${i <= completion.stars ? 'awarded' : ''}`;
+                star.innerText = '★';
+                starsEl.appendChild(star);
+            }
+        }
+
+        const timeEl = document.getElementById('levelCompleteTime');
+        if (timeEl) timeEl.innerText = `${completion.time.toFixed(1)}s`;
+
+        const speedEl = document.getElementById('levelCompleteSpeed');
+        if (speedEl) speedEl.innerText = `${(this.maxSpeed / 600).toFixed(2)} c`;
+
+        const slingshotsEl = document.getElementById('levelCompleteSlingshots');
+        if (slingshotsEl) slingshotsEl.innerText = `${this.perfectSlingshots}`;
+
+        const scoreEl = document.getElementById('levelCompleteScore');
+        if (scoreEl) scoreEl.innerText = `${Math.floor(completion.score).toLocaleString()} PTS`;
+
+        const nextBtn = document.getElementById('nextLevelBtn');
+        if (nextBtn) {
+            if (completion.isFinalLevel) {
+                nextBtn.innerText = 'TRANSCENDENCE ACHIEVED ★';
+            } else {
+                nextBtn.innerText = `NEXT: EXPEDITION ${completion.level.id + 1} ▶`;
+            }
+        }
+
+        modal.classList.remove('hidden');
+    }
+
+    drawCockpitHorizon() {
+        if (this.state !== 'PLAYING') return;
+
+        const ctx = this.ctx;
+        const w = this.canvas.width;
+        const h = this.canvas.height;
+        const cx = w / 2;
+        const cy = h / 2;
+
+        ctx.save();
+
+        // 1. Relativistic Velocity Vector Reticle (Flight Path Marker)
+        const speed = Math.sqrt(this.ship.vx * this.ship.vx + this.ship.vy * this.ship.vy);
+        const headingAngle = Math.atan2(this.ship.vy, this.ship.vx);
+        const reticleDist = Math.min(80, speed * 0.08);
+        const rx = cx + Math.cos(headingAngle) * reticleDist;
+        const ry = cy + Math.sin(headingAngle) * reticleDist;
+
+        ctx.strokeStyle = 'rgba(0, 247, 255, 0.45)';
+        ctx.lineWidth = 1.5;
+
+        // Reticle ring
+        ctx.beginPath();
+        ctx.arc(rx, ry, 12, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Reticle crosshair wings
+        ctx.beginPath();
+        ctx.moveTo(rx - 22, ry);
+        ctx.lineTo(rx - 12, ry);
+        ctx.moveTo(rx + 12, ry);
+        ctx.lineTo(rx + 22, ry);
+        ctx.moveTo(rx, ry - 22);
+        ctx.lineTo(rx, ry - 12);
+        ctx.stroke();
+
+        // Reticle center dot
+        ctx.fillStyle = '#00f7ff';
+        ctx.beginPath();
+        ctx.arc(rx, ry, 2, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 2. Ranger Pitch Ladder / Attitude Horizon
+        const pitchAngle = this.ship.rotation || 0;
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(pitchAngle * 0.4);
+
+        ctx.strokeStyle = 'rgba(0, 247, 255, 0.22)';
+        ctx.lineWidth = 1.2;
+
+        const barOffsets = [-40, 0, 40];
+        for (const bo of barOffsets) {
+            const barW = bo === 0 ? 80 : 45;
+            ctx.beginPath();
+            ctx.moveTo(-barW, bo);
+            ctx.lineTo(-20, bo);
+            if (bo !== 0) ctx.lineTo(-20, bo + (bo > 0 ? -6 : 6));
+            ctx.moveTo(20, bo);
+            ctx.lineTo(barW, bo);
+            if (bo !== 0) ctx.lineTo(20, bo + (bo > 0 ? -6 : 6));
+            ctx.stroke();
+        }
+        ctx.restore();
+
+        // 3. Singularity Proximity Warning Vector (Interstellar Gargantua Alert)
+        const horizonDist = this.ship.x - this.horizon.x;
+        if (horizonDist < 750) {
+            const urgency = Math.min(1, Math.max(0, 1 - (horizonDist / 750)));
+            ctx.fillStyle = `rgba(239, 68, 68, ${0.45 + urgency * 0.55})`;
+            ctx.font = '9px "JetBrains Mono", monospace';
+            ctx.textAlign = 'left';
+            ctx.fillText(`CRITICAL HORIZON VECTOR: ${Math.floor(horizonDist / 10)} AU`, 28, h - 36);
+        }
+
+        ctx.restore();
     }
 }

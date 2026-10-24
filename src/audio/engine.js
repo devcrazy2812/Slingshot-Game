@@ -206,6 +206,14 @@ export class SoundSystem {
         }
     }
 
+    stopMusic() {
+        this.isPlayingMusic = false;
+        if (this.musicInterval) {
+            clearInterval(this.musicInterval);
+            this.musicInterval = null;
+        }
+    }
+
     // Generative 124 BPM Synthwave Sequencer
     startMusic() {
         if (!this.ctx || this.isMuted || this.isSuspended) return;
