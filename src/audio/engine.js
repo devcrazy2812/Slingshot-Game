@@ -13,33 +13,51 @@ export class SoundSystem {
         this.initialized = false;
         this.droneGain = null;
         this.musicGain = null;
+        this.sfxGain = null;
         this.masterGain = null;
         this.tetherOsc = null;
         this.tetherGain = null;
 
+        // Persistent volume settings
+        this.masterVolume = parseFloat((typeof localStorage !== 'undefined' && localStorage.getItem('slingshot_vol_master')) || '1.0');
+        this.musicVolume = parseFloat((typeof localStorage !== 'undefined' && localStorage.getItem('slingshot_vol_music')) || '0.75');
+        this.sfxVolume = parseFloat((typeof localStorage !== 'undefined' && localStorage.getItem('slingshot_vol_sfx')) || '1.0');
+
         // Music sequencer state
         this.musicInterval = null;
         this.currentStep = 0;
-        this.tempo = Config.audio.tempo || 124; // BPM
+        this.tempo = (typeof Config !== 'undefined' && Config.audio) ? (Config.audio.tempo || 124) : 124; // BPM
         this.isPlayingMusic = false;
+
+        // Lifecycle & active oscillator handles
+        this.droneOsc1 = null;
+        this.droneOsc2 = null;
+        this.tetherTimeout = null;
+        this.isSuspended = false;
     }
 
     init() {
-        if (this.initialized) return;
-        try {
-            const AudioContext = window.AudioContext || window.webkitAudioContext;
-            this.ctx = new AudioContext();
-            this.initialized = true;
+        if (!this.initialized) {
+            try {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                if (!AudioContext) return;
+                this.ctx = new AudioContext();
+                this.initialized = true;
 
             // Master safety gain cap
             this.masterGain = this.ctx.createGain();
-            const maxCap = Math.min(Config.audio.masterGain || 0.3, 0.3);
-            this.masterGain.gain.setValueAtTime(maxCap, this.ctx.currentTime);
+            const maxCap = Math.min(Config.audio.masterGain || 0.3, 0.3) * this.masterVolume;
+            this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : maxCap, this.ctx.currentTime);
             this.masterGain.connect(this.ctx.destination);
+
+            // SFX Bus
+            this.sfxGain = this.ctx.createGain();
+            this.sfxGain.gain.setValueAtTime(this.sfxVolume, this.ctx.currentTime);
+            this.sfxGain.connect(this.masterGain);
 
             // Master music gain routed through master safety gain
             this.musicGain = this.ctx.createGain();
-            this.musicGain.gain.setValueAtTime(this.isMuted ? 0 : 0.18, this.ctx.currentTime);
+            this.musicGain.gain.setValueAtTime(this.isMuted ? 0 : 0.18 * this.musicVolume, this.ctx.currentTime);
             this.musicGain.connect(this.masterGain);
 
             this.startAmbientDrone();
@@ -47,59 +65,151 @@ export class SoundSystem {
         } catch (e) {
             console.warn("Web Audio API not supported", e);
         }
+        }
+        if (this.ctx && this.ctx.state === 'suspended') {
+            this.ctx.resume().catch(() => {});
+        }
+    }
+
+    suspend() {
+        this.isSuspended = true;
+        this.stopMusic();
+        this.stopTetherHum();
+        if (this.masterGain && this.ctx) {
+            try {
+                this.masterGain.gain.setValueAtTime(0, this.ctx.currentTime);
+            } catch (_) {}
+        }
+        if (this.ctx && this.ctx.state !== 'suspended') {
+            this.ctx.suspend().catch(() => {});
+        }
     }
 
     resume() {
+        this.isSuspended = false;
         if (!this.initialized) {
             this.init();
+            return;
         }
         if (this.ctx && this.ctx.state === 'suspended') {
-            this.ctx.resume();
+            this.ctx.resume().catch(() => {});
+        }
+        if (this.masterGain && this.ctx) {
+            const maxCap = ((typeof Config !== 'undefined' && Config.audio && Config.audio.masterGain) || 0.3) * this.masterVolume;
+            try {
+                this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : maxCap, this.ctx.currentTime);
+            } catch (_) {}
+        }
+        if (!this.isMuted) {
+            if (!this.droneOsc1) {
+                this.startAmbientDrone();
+            }
+            if (!this.musicInterval) {
+                this.startMusic();
+            }
+        }
+    }
+
+    stopAll() {
+        this.stopMusic();
+        this.stopAmbientDrone();
+        this.stopTetherHum();
+    }
+
+    setMasterVolume(val) {
+        this.masterVolume = Math.max(0, Math.min(1, val));
+        if (typeof localStorage !== 'undefined') {
+            localStorage.setItem('slingshot_vol_master', this.masterVolume.toString());
+        }
+        if (this.masterGain && this.ctx && !this.isMuted) {
+            const maxCap = Math.min(Config.audio.masterGain || 0.3, 0.3) * this.masterVolume;
+            this.masterGain.gain.setValueAtTime(maxCap, this.ctx.currentTime);
+        }
+    }
+
+    setMusicVolume(val) {
+        this.musicVolume = Math.max(0, Math.min(1, val));
+        if (typeof localStorage !== 'undefined') {
+            localStorage.setItem('slingshot_vol_music', this.musicVolume.toString());
+        }
+        if (this.musicGain && this.ctx && !this.isMuted) {
+            this.musicGain.gain.setValueAtTime(0.18 * this.musicVolume, this.ctx.currentTime);
+        }
+    }
+
+    setSfxVolume(val) {
+        this.sfxVolume = Math.max(0, Math.min(1, val));
+        if (typeof localStorage !== 'undefined') {
+            localStorage.setItem('slingshot_vol_sfx', this.sfxVolume.toString());
+        }
+        if (this.sfxGain && this.ctx) {
+            this.sfxGain.gain.setValueAtTime(this.sfxVolume, this.ctx.currentTime);
         }
     }
 
     toggleMute() {
         this.isMuted = !this.isMuted;
-        if (this.droneGain && this.ctx) {
-            this.droneGain.gain.setValueAtTime(this.isMuted ? 0 : 0.12, this.ctx.currentTime);
+        if (this.masterGain && this.ctx) {
+            const maxCap = ((typeof Config !== 'undefined' && Config.audio && Config.audio.masterGain) || 0.3) * this.masterVolume;
+            try {
+                this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : maxCap, this.ctx.currentTime);
+            } catch (_) {}
         }
-        if (this.musicGain && this.ctx) {
-            this.musicGain.gain.setValueAtTime(this.isMuted ? 0 : 0.18, this.ctx.currentTime);
+        if (this.isMuted) {
+            this.stopMusic();
+            this.stopAmbientDrone();
+            this.stopTetherHum();
+        } else if (!this.isSuspended) {
+            this.startAmbientDrone();
+            this.startMusic();
         }
         return this.isMuted;
     }
 
     startAmbientDrone() {
-        if (!this.ctx || this.isMuted) return;
+        if (!this.ctx || this.isMuted || this.isSuspended) return;
+        this.stopAmbientDrone();
 
-        const osc1 = this.ctx.createOscillator();
-        const osc2 = this.ctx.createOscillator();
+        this.droneOsc1 = this.ctx.createOscillator();
+        this.droneOsc2 = this.ctx.createOscillator();
         const filter = this.ctx.createBiquadFilter();
         this.droneGain = this.ctx.createGain();
 
-        osc1.type = 'sawtooth';
-        osc1.frequency.setValueAtTime(55, this.ctx.currentTime); // A1
+        this.droneOsc1.type = 'sawtooth';
+        this.droneOsc1.frequency.setValueAtTime(55, this.ctx.currentTime); // A1
 
-        osc2.type = 'sine';
-        osc2.frequency.setValueAtTime(82.4, this.ctx.currentTime); // E2
+        this.droneOsc2.type = 'sine';
+        this.droneOsc2.frequency.setValueAtTime(82.4, this.ctx.currentTime); // E2
 
         filter.type = 'lowpass';
         filter.frequency.setValueAtTime(140, this.ctx.currentTime);
 
         this.droneGain.gain.setValueAtTime(0.12, this.ctx.currentTime);
 
-        osc1.connect(filter);
-        osc2.connect(filter);
+        this.droneOsc1.connect(filter);
+        this.droneOsc2.connect(filter);
         filter.connect(this.droneGain);
         this.droneGain.connect(this.masterGain || this.ctx.destination);
 
-        osc1.start();
-        osc2.start();
+        this.droneOsc1.start();
+        this.droneOsc2.start();
+    }
+
+    stopAmbientDrone() {
+        if (this.droneOsc1) {
+            try { this.droneOsc1.stop(); this.droneOsc1.disconnect(); } catch (_) {}
+            this.droneOsc1 = null;
+        }
+        if (this.droneOsc2) {
+            try { this.droneOsc2.stop(); this.droneOsc2.disconnect(); } catch (_) {}
+            this.droneOsc2 = null;
+        }
     }
 
     // Generative 124 BPM Synthwave Sequencer
     startMusic() {
-        if (!this.ctx || this.musicInterval) return;
+        if (!this.ctx || this.isMuted || this.isSuspended) return;
+        this.stopMusic();
         this.isPlayingMusic = true;
 
         // Bassline frequencies for Am -> F -> C -> G progression
@@ -250,7 +360,7 @@ export class SoundSystem {
         gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
 
         osc.connect(gain);
-        gain.connect(this.masterGain || this.ctx.destination);
+        gain.connect(this.sfxGain || this.masterGain || this.ctx.destination);
 
         osc.start(now);
         osc.stop(now + 0.2);
@@ -266,7 +376,7 @@ export class SoundSystem {
             this.tetherOsc.type = 'triangle';
             this.tetherGain.gain.setValueAtTime(0.08, this.ctx.currentTime);
             this.tetherOsc.connect(this.tetherGain);
-            this.tetherGain.connect(this.masterGain || this.ctx.destination);
+            this.tetherGain.connect(this.sfxGain || this.masterGain || this.ctx.destination);
             this.tetherOsc.start();
         }
         if (this.tetherOsc) {
@@ -275,17 +385,30 @@ export class SoundSystem {
     }
 
     stopTetherHum() {
+        if (this.tetherTimeout) {
+            clearTimeout(this.tetherTimeout);
+            this.tetherTimeout = null;
+        }
         if (this.tetherGain && this.ctx) {
-            this.tetherGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.05);
-            setTimeout(() => {
-                if (this.tetherOsc) {
+            try {
+                this.tetherGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.05);
+            } catch (_) {}
+            const osc = this.tetherOsc;
+            this.tetherOsc = null;
+            this.tetherTimeout = setTimeout(() => {
+                if (osc) {
                     try {
-                        this.tetherOsc.stop();
-                        this.tetherOsc.disconnect();
-                    } catch (e) {}
-                    this.tetherOsc = null;
+                        osc.stop();
+                        osc.disconnect();
+                    } catch (_) {}
                 }
             }, 60);
+        } else if (this.tetherOsc) {
+            try {
+                this.tetherOsc.stop();
+                this.tetherOsc.disconnect();
+            } catch (_) {}
+            this.tetherOsc = null;
         }
     }
 
@@ -318,7 +441,7 @@ export class SoundSystem {
 
         noise.connect(filter);
         filter.connect(gain);
-        gain.connect(this.masterGain || this.ctx.destination);
+        gain.connect(this.sfxGain || this.masterGain || this.ctx.destination);
 
         noise.start(now);
     }
@@ -341,7 +464,7 @@ export class SoundSystem {
             gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.35);
 
             osc.connect(gain);
-            gain.connect(this.masterGain || this.ctx.destination);
+            gain.connect(this.sfxGain || this.masterGain || this.ctx.destination);
 
             osc.start(startTime);
             osc.stop(startTime + 0.36);
@@ -369,7 +492,7 @@ export class SoundSystem {
 
         osc.connect(filter);
         filter.connect(gain);
-        gain.connect(this.masterGain || this.ctx.destination);
+        gain.connect(this.sfxGain || this.masterGain || this.ctx.destination);
 
         osc.start(now);
         osc.stop(now + 0.32);
@@ -391,7 +514,7 @@ export class SoundSystem {
         gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
 
         osc.connect(gain);
-        gain.connect(this.masterGain || this.ctx.destination);
+        gain.connect(this.sfxGain || this.masterGain || this.ctx.destination);
 
         osc.start(now);
         osc.stop(now + 0.16);
@@ -414,7 +537,7 @@ export class SoundSystem {
         gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
 
         osc.connect(gain);
-        gain.connect(this.masterGain || this.ctx.destination);
+        gain.connect(this.sfxGain || this.masterGain || this.ctx.destination);
 
         osc.start(now);
         osc.stop(now + 0.55);
@@ -436,7 +559,7 @@ export class SoundSystem {
         gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
 
         osc.connect(gain);
-        gain.connect(this.masterGain || this.ctx.destination);
+        gain.connect(this.sfxGain || this.masterGain || this.ctx.destination);
 
         osc.start(now);
         osc.stop(now + 0.55);
@@ -459,7 +582,7 @@ export class SoundSystem {
         gain.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
 
         osc.connect(gain);
-        gain.connect(this.masterGain || this.ctx.destination);
+        gain.connect(this.sfxGain || this.masterGain || this.ctx.destination);
 
         osc.start(now);
         osc.stop(now + 0.85);
@@ -481,7 +604,7 @@ export class SoundSystem {
         gain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
 
         osc.connect(gain);
-        gain.connect(this.masterGain || this.ctx.destination);
+        gain.connect(this.sfxGain || this.masterGain || this.ctx.destination);
 
         osc.start(now);
         osc.stop(now + 0.18);
@@ -500,7 +623,7 @@ export class SoundSystem {
         subGain.gain.setValueAtTime(0.5, now);
         subGain.gain.exponentialRampToValueAtTime(0.001, now + 0.7);
         sub.connect(subGain);
-        subGain.connect(this.masterGain || this.ctx.destination);
+        subGain.connect(this.sfxGain || this.masterGain || this.ctx.destination);
         sub.start(now);
         sub.stop(now + 0.75);
 
@@ -516,8 +639,73 @@ export class SoundSystem {
         gain.gain.setValueAtTime(0.35, now);
         gain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
         noise.connect(gain);
-        gain.connect(this.masterGain || this.ctx.destination);
+        gain.connect(this.sfxGain || this.masterGain || this.ctx.destination);
         noise.start(now);
+    }
+
+    // Interstellar Clockwork Ticking Pulse (Time Dilation & Critical Maneuvers)
+    playTickingPulse(time = null) {
+        if (!this.ctx || this.isMuted || this.isSuspended) return;
+        const now = time !== null ? time : this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(1400, now);
+        osc.frequency.exponentialRampToValueAtTime(80, now + 0.025);
+
+        gain.gain.setValueAtTime(0.3, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.03);
+
+        osc.connect(gain);
+        gain.connect(this.sfxGain || this.masterGain || this.ctx.destination);
+
+        osc.start(now);
+        osc.stop(now + 0.035);
+    }
+
+    // Level Complete Victory Harmonic Fanfare
+    playVictoryFanfare() {
+        if (!this.ctx || this.isMuted || this.isSuspended) return;
+        const notes = [523.25, 659.25, 783.99, 1046.5]; // C5, E5, G5, C6
+        notes.forEach((freq, idx) => {
+            const now = this.ctx.currentTime + idx * 0.12;
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, now);
+
+            gain.gain.setValueAtTime(0.25, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+
+            osc.connect(gain);
+            gain.connect(this.sfxGain || this.masterGain || this.ctx.destination);
+
+            osc.start(now);
+            osc.stop(now + 0.5);
+        });
+    }
+
+    // Tactical Singularity Warning Siren Pulse
+    playWarningPulse() {
+        if (!this.ctx || this.isMuted || this.isSuspended) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(880, now);
+        osc.frequency.linearRampToValueAtTime(440, now + 0.16);
+
+        gain.gain.setValueAtTime(0.18, now);
+        gain.gain.linearRampToValueAtTime(0.001, now + 0.18);
+
+        osc.connect(gain);
+        gain.connect(this.sfxGain || this.masterGain || this.ctx.destination);
+
+        osc.start(now);
+        osc.stop(now + 0.2);
     }
 }
 

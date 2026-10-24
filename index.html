@@ -5,6 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
   <title>Slingshot: Event Horizon — Cosmic Physics Runner</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="alternate icon" type="image/png" href="/icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Slingshot">
+  <meta name="theme-color" content="#000000">
+  <link rel="apple-touch-icon" href="/icon.png">
+  <link rel="manifest" href="/manifest.json">
   <link rel="stylesheet" href="/src/style.css">
 </head>
 <body>
@@ -14,6 +22,15 @@
   <!-- Game Simulation Canvas -->
   <canvas id="gameCanvas"></canvas>
   <div class="scanlines"></div>
+
+  <!-- Tactical Horizon Siren Overlay (Flashing Red Warning Border) -->
+  <div id="horizonWarningOverlay" class="horizon-warning-overlay hidden">
+    <div class="warning-banner-top">
+      <span class="warning-icon">⚠️</span>
+      <span class="warning-text">CRITICAL SINGULARITY PROXIMITY // ESCAPE VELOCITY REQUIRED</span>
+      <span class="warning-icon">⚠️</span>
+    </div>
+  </div>
 
   <!-- High-Precision Sci-Fi HUD (Orbkit Glassmorphism) -->
   <div id="hud" class="hidden">
@@ -29,6 +46,26 @@
           <span class="hud-meta-label">DISPLACEMENT</span>
           <span id="hudDistance" class="hud-meta-val">0 LY</span>
         </div>
+        <div class="hud-subvalue">
+          <span class="hud-meta-label">TIME DILATION [γ]</span>
+          <span id="hudTimeDilation" class="hud-meta-val" style="color: #c084fc;">1.00x</span>
+        </div>
+      </div>
+
+      <!-- Center-Left: Campaign Mission Objective Tracker (Interstellar Expeditions) -->
+      <div class="orbkit-card campaign-hud-card ui-interactive hidden" id="campaignHudPanel">
+        <div class="card-pill gold-pill">
+          <span class="live-indicator gold-dot"></span>
+          <span id="campaignHudLevel">EXPEDITION 01 // SOL DEPARTURE</span>
+        </div>
+        <div class="campaign-hud-goal-row">
+          <span class="campaign-hud-goal" id="campaignHudGoal">DIST: 0 / 1600 LY</span>
+          <span class="campaign-hud-pct" id="campaignHudPct">0%</span>
+        </div>
+        <div class="campaign-bar-track">
+          <div class="campaign-bar-fill" id="campaignBarFill" style="width: 0%;"></div>
+        </div>
+        <div class="campaign-hud-sub" id="campaignHudSlingshots">PERFECT SLINGSHOTS: 0 / 1</div>
       </div>
 
       <!-- Center: Event Horizon Singularity Proximity Sensor -->
@@ -38,6 +75,30 @@
           <span>SINGULARITY PROXIMITY</span>
         </div>
         <div class="hud-value hazard-val" id="hudHorizonGap">80 AU</div>
+      </div>
+
+      <!-- Center-Right: Chaos Twin Orbital Divergence Telemetry -->
+      <div class="orbkit-card chaos-card ui-interactive hidden" id="chaosPanel">
+        <div class="card-pill chaos-pill">
+          <span class="live-indicator chaos-dot"></span>
+          <span>CHAOS TWIN [C]</span>
+        </div>
+        <div class="chaos-stats-row">
+          <div class="chaos-stat">
+            <span class="chaos-meta-label">SEPARATION</span>
+            <span id="chaosSeparation" class="chaos-meta-val">1.000e-6 px</span>
+          </div>
+          <div class="chaos-stat">
+            <span class="chaos-meta-label">ELAPSED</span>
+            <span id="chaosTime" class="chaos-meta-val">0.0 s</span>
+          </div>
+        </div>
+        <div class="chaos-slider-container">
+          <div class="chaos-slider-label-row">
+            <span id="chaosOffsetLabel">starting difference: 0.000001 px</span>
+          </div>
+          <input type="range" id="chaosOffsetSlider" min="0.000001" max="0.001" step="0.000001" value="0.000001">
+        </div>
       </div>
 
       <!-- Right: Galactic Score, Combo & Controls -->
@@ -52,7 +113,11 @@
           </div>
         </div>
         <div class="hud-actions ui-interactive">
+          <button class="orbkit-icon-btn" id="tasksBtn" title="Mission Tasks & Directives [T]">📋</button>
+          <button class="orbkit-icon-btn" id="codexBtn" title="Planetary Codex [O]">🪐</button>
+          <button class="orbkit-icon-btn" id="chaosBtn" title="Toggle Chaos Twin [C]">♊</button>
           <button class="orbkit-icon-btn" id="muteBtn" title="Toggle Sound / Music">🔊</button>
+          <button class="orbkit-icon-btn" id="settingsBtn" title="Flight Systems & Calibration Settings">⚙️</button>
           <button class="orbkit-icon-btn" id="pauseBtn" title="Pause Game">⏸</button>
         </div>
       </div>
@@ -98,38 +163,85 @@
         <span class="hint-key">[HOLD]</span> ORBIT &bull; 
         <span class="hint-key">[RELEASE]</span> SLINGSHOT &bull; 
         <span class="hint-key">[SHIFT]</span> PHASE &bull; 
-        <span class="hint-key">[F]</span> SLOW-MO
+        <span class="hint-key">[F]</span> SLOW-MO &bull; 
+        <span class="hint-key">[C]</span> CHAOS TWIN
       </div>
     </div>
   </div>
 
+  <!-- Mobile Left-Thumb Flight Steering Trim Pad -->
+  <div class="mobile-steering-controls ui-interactive">
+    <button class="mobile-steer-btn" id="mobilePitchUpBtn" title="Pitch Thrusters Up">▲</button>
+    <div class="mobile-steer-label">PITCH</div>
+    <button class="mobile-steer-btn" id="mobilePitchDownBtn" title="Pitch Thrusters Down">▼</button>
+  </div>
+
   <!-- Mobile Quick Touch Buttons for Android / Touchscreens -->
   <div class="mobile-controls ui-interactive">
-    <button class="mobile-action-btn phase-touch-btn" id="mobilePhaseBtn">
+    <button class="mobile-action-btn tasks-touch-btn" id="mobileTasksBtn" title="Mission Tasks">
+      <span class="touch-icon">📋</span>
+      <span class="touch-label">TASKS</span>
+    </button>
+    <button class="mobile-action-btn codex-touch-btn" id="mobileCodexBtn" title="Planetary Codex">
+      <span class="touch-icon">🪐</span>
+      <span class="touch-label">CODEX</span>
+    </button>
+    <button class="mobile-action-btn dilation-touch-btn" id="mobileDilationBtn" title="Time Dilation [Slow-Mo]">
+      <span class="touch-icon">⏱️</span>
+      <span class="touch-label">SLOW</span>
+    </button>
+    <button class="mobile-action-btn phase-touch-btn" id="mobilePhaseBtn" title="Quantum Phase Shift">
       <span class="touch-icon">🛡️</span>
       <span class="touch-label">PHASE</span>
     </button>
-    <button class="mobile-action-btn boost-touch-btn" id="mobileBoostBtn">
+    <button class="mobile-action-btn boost-touch-btn" id="mobileBoostBtn" title="Ion Boost">
       <span class="touch-icon">⚡</span>
       <span class="touch-label">BOOST</span>
+    </button>
+    <button class="mobile-action-btn chaos-touch-btn" id="mobileChaosBtn" title="Chaos Twin">
+      <span class="touch-icon">♊</span>
+      <span class="touch-label">TWIN</span>
     </button>
   </div>
 
   <!-- Start / Title Screen Modal with Orbkit Vessel Hangar -->
   <div id="startScreen" class="screen-overlay">
     <div class="orbkit-modal ui-interactive">
-      <div class="modal-header">
-        <div class="card-pill" style="margin-bottom: 8px;">
-          <span class="live-indicator"></span>
-          <span>ORBKIT COSMIC RUNNER // EVENT HORIZON</span>
+      <div class="modal-header header-with-logo">
+        <img src="/logo.svg" alt="Event Horizon Singularity Interceptor Logo" class="game-logo-emblem">
+        <div class="header-text-block">
+          <div class="card-pill" style="margin-bottom: 6px;">
+            <span class="live-indicator"></span>
+            <span>ORBKIT COSMIC RUNNER // EVENT HORIZON</span>
+          </div>
+          <h1 class="modal-title">SLINGSHOT</h1>
+          <div class="modal-subtitle">RELATIVISTIC ORBITAL SIMULATION &amp; DEEP SPACE EXPLORATION</div>
         </div>
-        <h1 class="modal-title">SLINGSHOT</h1>
-        <div class="modal-subtitle">RELATIVISTIC ORBITAL SIMULATION</div>
       </div>
 
       <div class="mission-brief">
         <div class="brief-tag">[MISSION_LOG: SECTOR_NULL]</div>
         A supermassive singularity has collapsed behind your cruiser. Anchor your <strong>Gravitational Tether Hook</strong> to stellar bodies, slingshot through orbital gravity wells, and harness relativistic velocities to escape the encroaching Event Horizon.
+      </div>
+
+      <!-- Pilot Career Status Strip -->
+      <div class="pilot-career-strip">
+        <div class="pilot-strip-item">
+          <span class="strip-label">PILOT RANK</span>
+          <span class="strip-value" id="hangarPilotRank">RANK I // NOVICE CADET</span>
+        </div>
+        <div class="pilot-strip-item">
+          <span class="strip-label">DIRECTIVES COMPLETED</span>
+          <span class="strip-value" id="hangarDirectivesCount">0 / 8 DIRECTIVES</span>
+        </div>
+        <div class="pilot-strip-item">
+          <span class="strip-label">PLANETS DISCOVERED</span>
+          <span class="strip-value" id="hangarCodexCount">0 / 16 WORLDS</span>
+        </div>
+        <div class="pilot-strip-item">
+          <span class="strip-label">GALACTIC RECORD</span>
+          <span class="strip-value highlight-gold" id="hangarHighScore">0 PTS</span>
+        </div>
       </div>
 
       <!-- Ship Selection Hangar with Live Orb Previews -->
@@ -213,7 +325,13 @@
         </div>
       </div>
 
-      <button class="btn-primary" id="startBtn">LAUNCH INTERCEPTOR</button>
+      <div class="modal-actions-row">
+        <button class="btn-primary campaign-btn" id="startCampaignBtn" style="flex: 2; background: linear-gradient(135deg, #f59e0b, #ea580c); border-color: #f59e0b; font-weight: 800; letter-spacing: 0.05em;">⭐ 10 EXPEDITIONS [CAMPAIGN]</button>
+        <button class="btn-secondary" id="startBtn" style="flex: 1.4;">♾️ ENDLESS RUN</button>
+        <button class="btn-secondary" id="startTasksBtn" style="flex: 0.9;">📋 DIRECTIVES</button>
+        <button class="btn-secondary" id="startCodexBtn" style="flex: 0.9;">🪐 CODEX</button>
+        <button class="orbkit-icon-btn" id="startSettingsBtn" style="padding: 0 16px; border-radius: 8px;" title="Flight Settings">⚙️</button>
+      </div>
     </div>
   </div>
 
@@ -250,7 +368,11 @@
         </div>
       </div>
 
-      <button class="btn-primary" id="restartBtn">RE-ENGAGE INTERCEPTOR</button>
+      <div class="modal-actions-row">
+        <button class="btn-primary" id="restartBtn" style="flex: 2;">RE-ENGAGE INTERCEPTOR</button>
+        <button class="btn-secondary" id="gameOverTasksBtn" style="flex: 1;">📋 DIRECTIVES</button>
+        <button class="orbkit-icon-btn" id="gameOverSettingsBtn" style="padding: 0 16px; border-radius: 8px;" title="Flight Settings">⚙️</button>
+      </div>
     </div>
   </div>
 
@@ -263,7 +385,321 @@
       </div>
       <h2 class="modal-title" style="font-size: 26px;">ORBITAL PAUSE</h2>
       <p style="margin: 16px 0 26px 0; color: #a1a1aa; font-size: 14px;">Trajectory calculation and event horizon expansion suspended.</p>
-      <button class="btn-primary" id="resumeBtn" style="padding: 12px 36px; font-size: 15px;">RESUME FLIGHT</button>
+      <div class="modal-actions-row">
+        <button class="btn-primary" id="resumeBtn" style="flex: 2;">RESUME FLIGHT</button>
+        <button class="btn-secondary" id="pauseTasksBtn" style="flex: 1;">📋 DIRECTIVES</button>
+        <button class="orbkit-icon-btn" id="pauseSettingsBtn" style="padding: 0 16px; border-radius: 8px;" title="Flight Settings">⚙️</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Planetary Exploration & Landing Simulation Modal -->
+  <div id="planetExplorationScreen" class="screen-overlay hidden">
+    <div class="orbkit-modal planet-modal ui-interactive">
+      <div class="planet-modal-header">
+        <div class="planet-title-group">
+          <div class="card-pill planet-category-pill" id="planetCategoryPill">
+            <span class="live-indicator" id="planetStatusDot"></span>
+            <span id="planetCategoryLabel">SOLAR SYSTEM EXPLORATION // SOL-IV</span>
+          </div>
+          <h1 class="modal-title planet-title" id="planetName">MARS</h1>
+          <div class="planet-subtitle" id="planetTagline">The Red Planet // Cold Iron-Oxide Desert</div>
+        </div>
+        <div class="planet-header-badges">
+          <span class="spec-pill planet-type-badge" id="planetTypeBadge">TERRESTRIAL</span>
+          <span class="spec-pill" id="planetGravityBadge">0.38g</span>
+        </div>
+      </div>
+
+      <!-- Live Simulation Canvas Container -->
+      <div class="planet-sim-wrapper">
+        <canvas id="planetSimCanvas" width="680" height="250"></canvas>
+        <div class="planet-sim-overlay">
+          <div class="planet-scan-hud">
+            <span class="scan-hud-tag" id="planetScanTag">ATMOSPHERIC TELEMETRY: ACTIVE</span>
+            <span class="scan-hud-status" id="planetScanStatus">ORBITAL TOUCHDOWN CONFIRMED</span>
+          </div>
+          <div class="planet-sim-controls">
+            <button class="sim-ctrl-btn" id="deployDroneBtn">DEPLOY SURFACE PROBE SCAN</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Planetary Science Telemetry Grid -->
+      <div class="planet-telemetry-grid">
+        <div class="planet-tel-card">
+          <div class="tel-label">SURFACE GRAVITY</div>
+          <div class="tel-value" id="telGravity">3.72 m/s² (0.38g)</div>
+        </div>
+        <div class="planet-tel-card">
+          <div class="tel-label">ATMOSPHERIC PRESSURE</div>
+          <div class="tel-value" id="telPressure">0.006 atm (6.1 mbar)</div>
+        </div>
+        <div class="planet-tel-card">
+          <div class="tel-label">TEMPERATURE</div>
+          <div class="tel-value" id="telTemp">-65°C (-85°F)</div>
+        </div>
+        <div class="planet-tel-card">
+          <div class="tel-label">ORBITAL DISTANCE</div>
+          <div class="tel-value" id="telDistance">1.52 AU (228M km)</div>
+        </div>
+        <div class="planet-tel-card">
+          <div class="tel-label">DAY / ROTATION</div>
+          <div class="tel-value" id="telDay">24h 37m (1 Sol)</div>
+        </div>
+        <div class="planet-tel-card">
+          <div class="tel-label">YEAR / ORBIT</div>
+          <div class="tel-value" id="telYear">687 Earth days</div>
+        </div>
+      </div>
+
+      <!-- Atmosphere Composition & Mission / Exoplanet Dossier -->
+      <div class="planet-dossier-box">
+        <div class="dossier-row">
+          <span class="dossier-label">ATMOSPHERE COMPOSITION:</span>
+          <span class="dossier-val" id="telAtmosphere">95.3% CO₂, 2.6% N₂, 1.9% Ar</span>
+        </div>
+        <div class="dossier-row" id="dossierMissionRow">
+          <span class="dossier-label" id="dossierFactHeading">HISTORIC MISSION / SCIENCE:</span>
+          <span class="dossier-val highlight-cyan" id="telMissionFact">NASA Perseverance Rover &amp; Ingenuity helicopter...</span>
+        </div>
+        <div class="dossier-row" id="dossierExpRow">
+          <span class="dossier-label" id="dossierExpHeading">SURFACE EXPERIENCE:</span>
+          <span class="dossier-val" id="telExperience">Extreme cold and thin air...</span>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="planet-actions">
+        <button class="btn-secondary" id="openCodexFromPlanetBtn">VIEW DISCOVERY CODEX</button>
+        <button class="btn-primary relaunch-btn" id="relaunchBtn">
+          <span>RELAUNCH INTO ORBIT</span>
+          <span class="relaunch-bonus">[+800 PTS &bull; SHIELDS RECHARGED &bull; SLINGSHOT BOOST]</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Planetary Codex Modal (Persistent Discoveries Log) -->
+  <div id="codexScreen" class="screen-overlay hidden">
+    <div class="orbkit-modal codex-modal ui-interactive">
+      <div class="modal-header">
+        <div class="card-pill">
+          <span class="live-indicator"></span>
+          <span>ASTRONOMICAL ARCHIVE // DEEP SPACE EXPLORATION</span>
+        </div>
+        <h1 class="modal-title">PLANETARY CODEX</h1>
+        <div class="modal-subtitle">EXPLORED WORLDS &amp; EXOPLANETARY DOSSIERS</div>
+      </div>
+
+      <!-- Codex Filter Tabs -->
+      <div class="codex-tabs">
+        <button class="codex-tab active" data-tab="all" id="tabAll">ALL WORLDS (<span id="countAll">0/16</span>)</button>
+        <button class="codex-tab" data-tab="solar" id="tabSolar">SOLAR SYSTEM (<span id="countSolar">0/8</span>)</button>
+        <button class="codex-tab" data-tab="exoplanet" id="tabExo">EXOPLANETS (<span id="countExo">0/8</span>)</button>
+      </div>
+
+      <!-- Codex Grid -->
+      <div class="codex-grid" id="codexGrid">
+        <!-- Dynamically populated -->
+      </div>
+
+      <div class="codex-actions">
+        <button class="btn-primary" id="closeCodexBtn">CLOSE ARCHIVE</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Top Animated Task Completed Toast Notification -->
+  <div id="taskCompleteBanner" class="task-banner hidden">
+    <div class="task-banner-content">
+      <div class="task-banner-badge">[DIRECTIVE ACCOMPLISHED]</div>
+      <div class="task-banner-name" id="taskBannerName">⚡ Relativistic Velocity</div>
+      <div class="task-banner-reward" id="taskBannerReward">+500 PTS AWARDED</div>
+    </div>
+  </div>
+
+  <!-- Mission Tasks & Directives Modal -->
+  <div id="tasksModal" class="screen-overlay hidden">
+    <div class="orbkit-modal tasks-modal ui-interactive">
+      <div class="modal-header">
+        <div class="card-pill">
+          <span class="live-indicator"></span>
+          <span id="pilotRankBadge">RANK I // NOVICE CADET</span>
+        </div>
+        <h1 class="modal-title">MISSION DIRECTIVES</h1>
+        <div class="modal-subtitle" id="tasksOverviewSubtitle">FLIGHT OBJECTIVES &bull; 0/8 COMPLETED</div>
+      </div>
+
+      <!-- Task Cards Grid -->
+      <div class="tasks-grid" id="tasksGrid">
+        <!-- Dynamically rendered task items -->
+      </div>
+
+      <div class="tasks-actions">
+        <button class="btn-primary" id="closeTasksBtn">DISMISS DIRECTIVES</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings & Systems Modal -->
+  <div id="settingsModal" class="screen-overlay hidden">
+    <div class="orbkit-modal settings-modal ui-interactive" style="max-width: 540px;">
+      <div class="modal-header">
+        <div class="card-pill">
+          <span class="live-indicator"></span>
+          <span>FLIGHT SYSTEMS &amp; SENSORY CALIBRATION</span>
+        </div>
+        <h1 class="modal-title">SETTINGS</h1>
+        <div class="modal-subtitle">AUDIO, HAPTICS &amp; FLIGHT TELEMETRY</div>
+      </div>
+
+      <div class="settings-grid">
+        <!-- Master Volume -->
+        <div class="setting-item">
+          <div class="setting-info">
+            <div class="setting-title">MASTER VOLUME</div>
+            <div class="setting-desc">Overall sound output gain ceiling</div>
+          </div>
+          <div class="setting-control">
+            <input type="range" class="setting-slider" id="masterVolSlider" min="0" max="1" step="0.05" value="1.0">
+            <span class="setting-value-display" id="masterVolVal">100%</span>
+          </div>
+        </div>
+
+        <!-- Music Volume -->
+        <div class="setting-item">
+          <div class="setting-info">
+            <div class="setting-title">SYNTHWAVE MUSIC</div>
+            <div class="setting-desc">124 BPM generative procedural synth soundtrack</div>
+          </div>
+          <div class="setting-control">
+            <input type="range" class="setting-slider" id="musicVolSlider" min="0" max="1" step="0.05" value="0.75">
+            <span class="setting-value-display" id="musicVolVal">75%</span>
+          </div>
+        </div>
+
+        <!-- SFX Volume -->
+        <div class="setting-item">
+          <div class="setting-info">
+            <div class="setting-title">ORBITAL SFX</div>
+            <div class="setting-desc">Thrusters, slingshot hum, warps &amp; collisions</div>
+          </div>
+          <div class="setting-control">
+            <input type="range" class="setting-slider" id="sfxVolSlider" min="0" max="1" step="0.05" value="1.0">
+            <span class="setting-value-display" id="sfxVolVal">100%</span>
+          </div>
+        </div>
+
+        <!-- Tactile Haptics -->
+        <div class="setting-item">
+          <div class="setting-info">
+            <div class="setting-title">TACTILE HAPTIC VIBRATION</div>
+            <div class="setting-desc">Physical vibration on tether lock, launch, and damage</div>
+          </div>
+          <div class="setting-control">
+            <label class="toggle-switch">
+              <input type="checkbox" id="hapticsToggle" checked>
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Screen Shake -->
+        <div class="setting-item">
+          <div class="setting-info">
+            <div class="setting-title">SCREEN SHAKE INTENSITY</div>
+            <div class="setting-desc">Impact trauma and high-g acceleration camera shake</div>
+          </div>
+          <div class="setting-control">
+            <input type="range" class="setting-slider" id="screenShakeSlider" min="0" max="1.5" step="0.1" value="1.0">
+            <span class="setting-value-display" id="screenShakeVal">100%</span>
+          </div>
+        </div>
+
+        <!-- Dynamic Look-Ahead Camera -->
+        <div class="setting-item">
+          <div class="setting-info">
+            <div class="setting-title">VELOCITY CAMERA LEAD</div>
+            <div class="setting-desc">Pan camera forward at relativistic speed to spot hazards</div>
+          </div>
+          <div class="setting-control">
+            <label class="toggle-switch">
+              <input type="checkbox" id="cameraLeadToggle" checked>
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-actions-row" style="margin-top: 20px;">
+        <button class="btn-primary" id="closeSettingsBtn" style="flex: 1;">APPLY &amp; DISMISS</button>
+      </div>
+    </div>
+  </div>
+
+  
+  <!-- Sci-Fi Campaign Expeditions Star Chart Modal -->
+  <div id="campaignScreen" class="screen-overlay hidden">
+    <div class="orbkit-modal campaign-modal ui-interactive" style="max-width: 960px;">
+      <div class="modal-header">
+        <div class="card-pill gold-pill">
+          <span class="live-indicator gold-dot"></span>
+          <span>INTERSTELLAR ODYSSEY // 10 CAMPAIGN EXPEDITIONS</span>
+        </div>
+        <h1 class="modal-title" style="color: #fbbf24; font-size: 28px; margin: 8px 0 4px 0;">EXPEDITION STAR CHART</h1>
+        <p class="modal-subtitle">Traverse the solar system and interstellar corridors. Master gravitational assists, survive relativistic time dilation, and transcend the singularity.</p>
+      </div>
+
+      <div class="campaign-grid" id="campaignGrid">
+        <!-- Dynamically generated campaign expedition cards -->
+      </div>
+
+      <div class="modal-actions-row" style="margin-top: 24px;">
+        <button class="btn-secondary" id="closeCampaignBtn" style="flex: 1;">CLOSE STAR CHART</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Level Complete Victory Modal -->
+  <div id="levelCompleteModal" class="screen-overlay hidden">
+    <div class="orbkit-modal ui-interactive" style="max-width: 540px;">
+      <div class="card-pill gold-pill" style="margin-bottom: 12px;">
+        <span class="live-indicator gold-dot"></span>
+        <span>MISSION PARAMETERS SATISFIED // TRAJECTORY CONFIRMED</span>
+      </div>
+      <h1 class="modal-title" style="color: #fbbf24; font-size: 32px;">EXPEDITION COMPLETE</h1>
+      <p class="modal-subtitle" id="levelCompleteTitle" style="color: #e2e8f0; font-weight: 600; margin-bottom: 16px;">EXPEDITION 01: SOL SYSTEM DEPARTURE</p>
+
+      <div class="stars-award-container" id="levelCompleteStars">
+        <span class="star-icon">★</span>
+        <span class="star-icon">★</span>
+        <span class="star-icon">★</span>
+      </div>
+
+      <div class="level-stats-card">
+        <div class="level-stat-row">
+          <span class="stat-name">TRANSIT TIME:</span>
+          <span class="stat-val" id="levelCompleteTime">18.4s</span>
+        </div>
+        <div class="level-stat-row">
+          <span class="stat-name">MAX RELATIVISTIC SPEED:</span>
+          <span class="stat-val" id="levelCompleteSpeed">0.45 c</span>
+        </div>
+        <div class="level-stat-row">
+          <span class="stat-name">PERFECT GRAVITY SLINGSHOTS:</span>
+          <span class="stat-val" id="levelCompleteSlingshots">2</span>
+        </div>
+        <div class="level-stat-row">
+          <span class="stat-name">EXPEDITION SCORE:</span>
+          <span class="stat-val gold-text" id="levelCompleteScore">4,800 PTS</span>
+        </div>
+      </div>
+
+      <div class="modal-actions-row" style="margin-top: 20px;">
+        <button class="btn-primary" id="nextLevelBtn" style="flex: 2; background: linear-gradient(135deg, #f59e0b, #ea580c); border-color: #f59e0b; font-weight: 700;">NEXT EXPEDITION ▶</button>
+        <button class="btn-secondary" id="campaignMapBtn" style="flex: 1;">STAR CHART</button>
+      </div>
     </div>
   </div>
 

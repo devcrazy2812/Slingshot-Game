@@ -18,6 +18,10 @@ class PhysicsEngine {
         return Math.sqrt(dx * dx + dy * dy);
     }
 
+    static angle(x1, y1, x2, y2) {
+        return Math.atan2(y2 - y1, x2 - x1);
+    }
+
     static normalizeAngle(a) {
         while (a > Math.PI) a -= Math.PI * 2;
         while (a < -Math.PI) a += Math.PI * 2;

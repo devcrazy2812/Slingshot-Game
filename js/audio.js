@@ -17,11 +17,12 @@ class SoundSystem {
     }
 
     init() {
-        if (this.initialized) return;
-        try {
-            const AudioContext = window.AudioContext || window.webkitAudioContext;
-            this.ctx = new AudioContext();
-            this.initialized = true;
+        if (!this.initialized) {
+            try {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                if (!AudioContext) return;
+                this.ctx = new AudioContext();
+                this.initialized = true;
 
             // Master music gain
             this.musicGain = this.ctx.createGain();
@@ -32,6 +33,10 @@ class SoundSystem {
             this.startMusic();
         } catch (e) {
             console.warn("Web Audio API not supported", e);
+        }
+        }
+        if (this.ctx && this.ctx.state === 'suspended') {
+            this.ctx.resume().catch(() => {});
         }
     }
 
@@ -82,7 +87,8 @@ class SoundSystem {
 
     // Generative 124 BPM Synthwave Sequencer
     startMusic() {
-        if (!this.ctx || this.musicInterval) return;
+        if (!this.ctx || this.isMuted || this.isSuspended) return;
+        this.stopMusic();
         this.isPlayingMusic = true;
 
         // Bassline frequencies for Am -> F -> C -> G progression
@@ -254,17 +260,30 @@ class SoundSystem {
     }
 
     stopTetherHum() {
+        if (this.tetherTimeout) {
+            clearTimeout(this.tetherTimeout);
+            this.tetherTimeout = null;
+        }
         if (this.tetherGain && this.ctx) {
-            this.tetherGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.05);
-            setTimeout(() => {
-                if (this.tetherOsc) {
+            try {
+                this.tetherGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.05);
+            } catch (_) {}
+            const osc = this.tetherOsc;
+            this.tetherOsc = null;
+            this.tetherTimeout = setTimeout(() => {
+                if (osc) {
                     try {
-                        this.tetherOsc.stop();
-                        this.tetherOsc.disconnect();
-                    } catch (e) {}
-                    this.tetherOsc = null;
+                        osc.stop();
+                        osc.disconnect();
+                    } catch (_) {}
                 }
             }, 60);
+        } else if (this.tetherOsc) {
+            try {
+                this.tetherOsc.stop();
+                this.tetherOsc.disconnect();
+            } catch (_) {}
+            this.tetherOsc = null;
         }
     }
 
@@ -497,6 +516,71 @@ class SoundSystem {
         noise.connect(gain);
         gain.connect(this.ctx.destination);
         noise.start(now);
+    }
+
+    // Interstellar Clockwork Ticking Pulse (Time Dilation & Critical Maneuvers)
+    playTickingPulse(time = null) {
+        if (!this.ctx || this.isMuted || this.isSuspended) return;
+        const now = time !== null ? time : this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(1400, now);
+        osc.frequency.exponentialRampToValueAtTime(80, now + 0.025);
+
+        gain.gain.setValueAtTime(0.3, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.03);
+
+        osc.connect(gain);
+        gain.connect(this.sfxGain || this.masterGain || this.ctx.destination);
+
+        osc.start(now);
+        osc.stop(now + 0.035);
+    }
+
+    // Level Complete Victory Harmonic Fanfare
+    playVictoryFanfare() {
+        if (!this.ctx || this.isMuted || this.isSuspended) return;
+        const notes = [523.25, 659.25, 783.99, 1046.5]; // C5, E5, G5, C6
+        notes.forEach((freq, idx) => {
+            const now = this.ctx.currentTime + idx * 0.12;
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, now);
+
+            gain.gain.setValueAtTime(0.25, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+
+            osc.connect(gain);
+            gain.connect(this.sfxGain || this.masterGain || this.ctx.destination);
+
+            osc.start(now);
+            osc.stop(now + 0.5);
+        });
+    }
+
+    // Tactical Singularity Warning Siren Pulse
+    playWarningPulse() {
+        if (!this.ctx || this.isMuted || this.isSuspended) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(880, now);
+        osc.frequency.linearRampToValueAtTime(440, now + 0.16);
+
+        gain.gain.setValueAtTime(0.18, now);
+        gain.gain.linearRampToValueAtTime(0.001, now + 0.18);
+
+        osc.connect(gain);
+        gain.connect(this.sfxGain || this.masterGain || this.ctx.destination);
+
+        osc.start(now);
+        osc.stop(now + 0.2);
     }
 }
 

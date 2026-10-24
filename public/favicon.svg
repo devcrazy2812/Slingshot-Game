@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <radialGradient id="fSpace" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#0b1329"/>
+      <stop offset="100%" stop-color="#02040a"/>
+    </radialGradient>
+    <linearGradient id="fArc" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ec4899"/>
+      <stop offset="50%" stop-color="#a855f7"/>
+      <stop offset="100%" stop-color="#00f7ff"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="128" height="128" rx="28" fill="url(#fSpace)"/>
+  <rect width="124" height="124" x="2" y="2" rx="26" fill="none" stroke="#00f7ff" stroke-width="1.5" stroke-opacity="0.4"/>
+
+  <!-- Singularity Accretion Ring -->
+  <ellipse cx="58" cy="68" rx="42" ry="24" fill="none" stroke="#fbbf24" stroke-width="2.2" transform="rotate(-24 58 68)"/>
+  <circle cx="58" cy="68" r="14" fill="#000000" stroke="#00f7ff" stroke-width="1.8"/>
+
+  <!-- Slingshot Curve -->
+  <path d="M 20 102 C 38 90, 52 75, 62 48 C 68 34, 78 24, 98 18" 
+        fill="none" stroke="url(#fArc)" stroke-width="3" stroke-linecap="round"/>
+
+  <!-- Stealth Interceptor -->
+  <g transform="translate(98, 18) rotate(32)">
+    <polygon points="10,0 -3,-6 -6,-9 -4,-3 0,0" fill="#ffffff" stroke="#00f7ff" stroke-width="0.8"/>
+    <polygon points="10,0 -3,6 -6,9 -4,3 0,0" fill="#ffffff" stroke="#00f7ff" stroke-width="0.8"/>
+    <polygon points="12,0 -6,-3 -8,0 -6,3" fill="#00f7ff"/>
+  </g>
+</svg>

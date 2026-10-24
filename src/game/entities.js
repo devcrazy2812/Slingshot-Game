@@ -12,6 +12,7 @@
 
 import { PhysicsEngine } from '../physics/engine.js';
 import { sounds } from '../audio/engine.js';
+import { SOLAR_PLANETS, KNOWN_EXOPLANETS, ALL_PLANETS, getPlanetById } from './planets.js';
 
 export class Ship {
     constructor(x, y, shipClass = 'vanguard') {
@@ -450,7 +451,7 @@ export class Ship {
 }
 
 export class CelestialBody {
-    constructor(x, y, type = 'hypergiant') {
+    constructor(x, y, type = 'hypergiant', planetData = null) {
         this.x = x;
         this.y = y;
         this.vx = 0;
@@ -458,8 +459,24 @@ export class CelestialBody {
         this.type = type;
         this.pulseTime = Math.random() * 100;
         this.isBinary = (type === 'binary');
+        this.isPlanet = (type === 'planet' || !!planetData);
+        this.planetData = planetData;
+        this.rotationAngle = Math.random() * Math.PI * 2;
 
-        switch (type) {
+        if (this.isPlanet && planetData) {
+            this.radius = planetData.radius || 42;
+            this.gravityRadius = planetData.gravityRadius || 280;
+            this.mu = planetData.mu || 850000;
+            this.slingshotPower = 32;
+            this.color = planetData.color || '#38bdf8';
+            this.glowColor = planetData.atmosphereColor || 'rgba(56, 189, 248, 0.4)';
+            this.coreColor = planetData.color;
+            this.name = planetData.name;
+            this.hasRings = !!planetData.hasRings;
+            this.ringRadius = planetData.ringRadius || (this.radius * 1.8);
+            this.ringColor = planetData.ringColor || 'rgba(252, 211, 77, 0.6)';
+        } else {
+            switch (type) {
             case 'hypergiant':
                 this.radius = 44;
                 this.gravityRadius = 290;
@@ -536,11 +553,17 @@ export class CelestialBody {
                 this.glowColor = 'rgba(255, 68, 0, 0.3)';
                 this.name = 'Red Supergiant';
                 break;
+            }
         }
     }
 
     update(dt) {
         this.pulseTime += dt * 2.2;
+
+        if (this.isPlanet) {
+            this.rotationAngle += dt * 0.2;
+            return;
+        }
 
         if (this.type === 'pulsar') {
             this.beamAngle += dt * 4.8;
@@ -563,8 +586,141 @@ export class CelestialBody {
         }
     }
 
+    drawPlanet(ctx) {
+        const pd = this.planetData || {};
+
+        // 1. Gravity Orbit Perimeter Ring
+        ctx.strokeStyle = this.glowColor;
+        ctx.lineWidth = 1.2;
+        ctx.setLineDash([6, 8]);
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.gravityRadius, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // 2. Back Rings (if ringed planet like Saturn / Uranus)
+        if (this.hasRings) {
+            ctx.save();
+            ctx.translate(this.x, this.y);
+            ctx.rotate(0.35);
+            ctx.strokeStyle = this.ringColor;
+            ctx.lineWidth = 8;
+            ctx.beginPath();
+            ctx.ellipse(0, 0, this.ringRadius, this.ringRadius * 0.28, 0, Math.PI, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        // 3. Luminous Atmospheric Glow
+        const atmoRad = this.radius * 1.35;
+        const atmoGrad = ctx.createRadialGradient(this.x, this.y, this.radius * 0.8, this.x, this.y, atmoRad);
+        atmoGrad.addColorStop(0, this.color);
+        atmoGrad.addColorStop(0.6, this.glowColor);
+        atmoGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        ctx.fillStyle = atmoGrad;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, atmoRad, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 4. Planetary Sphere with 3D Sphere Shading
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.clip();
+
+        const sphereGrad = ctx.createRadialGradient(
+            this.x - this.radius * 0.35,
+            this.y - this.radius * 0.35,
+            this.radius * 0.1,
+            this.x,
+            this.y,
+            this.radius
+        );
+        sphereGrad.addColorStop(0, '#ffffff');
+        sphereGrad.addColorStop(0.25, this.color);
+        sphereGrad.addColorStop(0.85, this.color);
+        sphereGrad.addColorStop(1, '#050508');
+        ctx.fillStyle = sphereGrad;
+        ctx.fill();
+
+        // Surface details by planet type
+        if (pd.id === 'jupiter' || pd.id === 'saturn') {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.22)';
+            for (let i = -this.radius; i < this.radius; i += 10) {
+                if (Math.abs(i) % 20 < 10) {
+                    ctx.fillRect(this.x - this.radius, this.y + i, this.radius * 2, 5);
+                }
+            }
+            if (pd.id === 'jupiter') {
+                ctx.fillStyle = '#ef4444';
+                ctx.beginPath();
+                ctx.ellipse(this.x + this.radius * 0.3, this.y + this.radius * 0.2, 12, 7, 0, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        } else if (pd.id === 'earth' || pd.id === 'trappist-1e') {
+            ctx.fillStyle = (pd.id === 'earth') ? '#15803d' : '#0f766e';
+            ctx.beginPath();
+            ctx.arc(this.x - this.radius * 0.2, this.y - this.radius * 0.1, this.radius * 0.45, 0, Math.PI * 2);
+            ctx.arc(this.x + this.radius * 0.25, this.y + this.radius * 0.2, this.radius * 0.35, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.radius * 0.65, 0.2, 2.2);
+            ctx.stroke();
+        } else if (pd.id === 'mars') {
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(this.x, this.y - this.radius * 0.75, this.radius * 0.25, 0, Math.PI);
+            ctx.fill();
+            ctx.fillStyle = '#7f1d1d';
+            ctx.beginPath();
+            ctx.arc(this.x + this.radius * 0.1, this.y, this.radius * 0.2, 0, Math.PI * 2);
+            ctx.fill();
+        } else if (pd.id === '55-cancri-e') {
+            ctx.strokeStyle = '#f97316';
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.radius * 0.5, 0, 3.0);
+            ctx.stroke();
+        }
+
+        ctx.restore();
+
+        // 5. Front Rings (cutting across front of planet)
+        if (this.hasRings) {
+            ctx.save();
+            ctx.translate(this.x, this.y);
+            ctx.rotate(0.35);
+            ctx.strokeStyle = this.ringColor;
+            ctx.lineWidth = 8;
+            ctx.beginPath();
+            ctx.ellipse(0, 0, this.ringRadius, this.ringRadius * 0.28, 0, 0, Math.PI);
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        // 6. Name Label Badge
+        ctx.save();
+        ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#ffffff';
+        ctx.shadowColor = this.color;
+        ctx.shadowBlur = 8;
+        const icon = pd.category === 'solar' ? '🪐' : '✨';
+        ctx.fillText(`${icon} ${this.name.toUpperCase()}`, this.x, this.y + this.radius + 18);
+        ctx.restore();
+    }
+
     draw(ctx, particleSystem) {
         ctx.save();
+
+        if (this.isPlanet) {
+            this.drawPlanet(ctx);
+            ctx.restore();
+            return;
+        }
 
         // 1. Equipotential Gravity Perimeter Ring
         ctx.strokeStyle = this.glowColor;

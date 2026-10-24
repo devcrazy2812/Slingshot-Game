@@ -58,3 +58,15 @@ if (document.readyState === 'loading') {
 } else {
   boot();
 }
+
+// iOS WebKit & Android user interaction audio unlock
+const unlockAudio = () => {
+  if (window.sounds && typeof window.sounds.resume === 'function') {
+    window.sounds.resume();
+  }
+};
+if (typeof window !== 'undefined') {
+  ['touchstart', 'touchend', 'pointerdown', 'keydown'].forEach(evt => {
+    window.addEventListener(evt, unlockAudio, { once: true, passive: true });
+  });
+}

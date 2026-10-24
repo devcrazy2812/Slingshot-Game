@@ -1,16 +1,49 @@
 // Main Game Controller for Slingshot: Event Horizon
 // Features 1/120s Fixed-Timestep Accumulator, Always-Centered Camera, Optimized Spacetime Fabric, and Directional Navigation Radar
 
+const CHAOS_OFFSET = 0.000001;
+
 class Game {
     constructor() {
         this.canvas = document.getElementById('gameCanvas');
         this.ctx = this.canvas.getContext('2d');
 
-        this.state = 'MENU'; // MENU, PLAYING, PAUSED, GAMEOVER
+        this.state = 'MENU'; // MENU, PLAYING, PAUSED, GAMEOVER, PLANET_EXPLORATION
         this.score = 0;
-        this.highScore = parseInt(localStorage.getItem('slingshot_highscore') || '0', 10);
+        let storedHigh = 0;
+        try {
+            const rawHigh = (typeof localStorage !== 'undefined') ? localStorage.getItem('slingshot_highscore') : null;
+            if (rawHigh) storedHigh = parseInt(rawHigh, 10) || 0;
+        } catch (_) {}
+        this.highScore = storedHigh;
         this.combo = 1;
         this.comboTimer = 0;
+
+        // Planetary Exploration & Science Codex State
+        this.currentPlanet = null;
+        this.planetSim = null;
+        this.planetSpawnCounter = 0;
+
+        let initialPlanets = [];
+        try {
+            const rawCodex = (typeof localStorage !== 'undefined') ? localStorage.getItem('slingshot_codex') : null;
+            if (rawCodex) {
+                const parsed = JSON.parse(rawCodex);
+                if (Array.isArray(parsed)) initialPlanets = parsed;
+            }
+        } catch (e) {
+            console.warn('Recovered from corrupted codex storage:', e);
+        }
+        this.discoveredPlanets = new Set(initialPlanets);
+        this.codexActiveTab = 'all';
+        this.taskManager = typeof TaskManager !== 'undefined' ? new TaskManager(this) : null;
+        this.campaign = typeof CampaignManager !== 'undefined' ? new CampaignManager() : null;
+        this.campaignElapsedTime = 0;
+        this.sirenPulseTimer = 0;
+        this.tickingSoundTimer = 0;
+        this.probesDeployed = 0;
+        this.wormholeJumps = 0;
+        this.exoplanetExplored = false;
         this.maxSpeed = 0;
         this.perfectSlingshots = 0;
         this.gameOverReason = '';
@@ -48,12 +81,40 @@ class Game {
         this.lastTime = performance.now();
         this.warningSoundCooldown = 0;
 
+        // Chaos Twin State
+        this.chaosOffset = CHAOS_OFFSET;
+        this.twin = null;
+        this.twinTrail = [];
+        this.chaosTime = 0;
+        this.chaosLogTimer = 0;
+
         this.initCanvas();
         this.bindEvents();
         this.bindShipSelector();
         this.updateHUD();
+        this.updateHangarPilotStrip();
 
         requestAnimationFrame((t) => this.loop(t));
+    }
+
+    updateHangarPilotStrip() {
+        if (!this.taskManager) return;
+        const rank = this.taskManager.getRank();
+        const compTasks = this.taskManager.getCompletedCount();
+        const totalTasks = this.taskManager.getTotalCount();
+        const discoveredWorlds = this.discoveredPlanets ? this.discoveredPlanets.size : 0;
+
+        const rankEl = document.getElementById('hangarPilotRank');
+        if (rankEl) rankEl.innerText = `${rank.badge} // ${rank.title}`;
+
+        const tasksEl = document.getElementById('hangarDirectivesCount');
+        if (tasksEl) tasksEl.innerText = `${compTasks} / ${totalTasks} DIRECTIVES`;
+
+        const codexEl = document.getElementById('hangarCodexCount');
+        if (codexEl) codexEl.innerText = `${discoveredWorlds} / 16 WORLDS`;
+
+        const highEl = document.getElementById('hangarHighScore');
+        if (highEl) highEl.innerText = `${Math.floor(this.highScore).toLocaleString()} PTS`;
     }
 
     initCanvas() {
@@ -89,15 +150,38 @@ class Game {
     }
 
     bindEvents() {
+        let touchSteerStartY = null;
+        let isLeftTouchSteering = false;
+
         window.addEventListener('pointermove', (e) => {
             this.input.mouseX = e.clientX;
             this.input.mouseY = e.clientY;
             this.input.hasPointerMoved = true;
+
+            if (isLeftTouchSteering && touchSteerStartY !== null) {
+                const dy = e.clientY - touchSteerStartY;
+                if (dy < -20) {
+                    this.input.upHeld = true;
+                    this.input.downHeld = false;
+                } else if (dy > 20) {
+                    this.input.downHeld = true;
+                    this.input.upHeld = false;
+                } else {
+                    this.input.upHeld = false;
+                    this.input.downHeld = false;
+                }
+            }
         });
 
         window.addEventListener('pointerdown', (e) => {
-            if (e.target.closest('.ui-interactive')) return;
+            if (e.target.closest && e.target.closest('.ui-interactive')) return;
             if (this.state === 'PLAYING') {
+                if (e.clientX < window.innerWidth * 0.35 && e.pointerType === 'touch') {
+                    isLeftTouchSteering = true;
+                    touchSteerStartY = e.clientY;
+                    return;
+                }
+
                 if (e.button === 2) {
                     this.input.boostHeld = true;
                 } else {
@@ -107,13 +191,25 @@ class Game {
             }
         });
 
+        const stopTouchSteer = () => {
+            if (isLeftTouchSteering) {
+                isLeftTouchSteering = false;
+                touchSteerStartY = null;
+                this.input.upHeld = false;
+                this.input.downHeld = false;
+            }
+        };
+
         window.addEventListener('pointerup', (e) => {
+            stopTouchSteer();
             if (e.button === 2) {
                 this.input.boostHeld = false;
             } else {
                 this.onTetherEnd();
             }
         });
+
+        window.addEventListener('pointercancel', stopTouchSteer);
 
         window.addEventListener('contextmenu', (e) => {
             e.preventDefault();
@@ -151,6 +247,24 @@ class Game {
                 }
             } else if (e.code === 'KeyP') {
                 this.togglePause();
+            } else if (e.code === 'KeyO') {
+                const codexScreen = document.getElementById('codexScreen');
+                if (codexScreen && !codexScreen.classList.contains('hidden')) {
+                    this.closeCodex();
+                } else {
+                    this.openCodex();
+                }
+            } else if (e.code === 'KeyT') {
+                const tasksModal = document.getElementById('tasksModal');
+                if (tasksModal && !tasksModal.classList.contains('hidden')) {
+                    this.closeTasksModal();
+                } else {
+                    this.openTasksModal();
+                }
+            } else if (e.code === 'KeyC') {
+                if (this.state === 'PLAYING') {
+                    this.toggleChaosTwin();
+                }
             }
         });
 
@@ -171,14 +285,187 @@ class Game {
             }
         });
 
-        document.getElementById('startBtn').addEventListener('click', () => this.startGame());
-        document.getElementById('restartBtn').addEventListener('click', () => this.startGame());
-        document.getElementById('pauseBtn').addEventListener('click', () => this.togglePause());
-        document.getElementById('resumeBtn').addEventListener('click', () => this.togglePause());
-        document.getElementById('muteBtn').addEventListener('click', () => {
+        // Android Hardware Back Button Handler
+        document.addEventListener('backbutton', (e) => {
+            e.preventDefault();
+            this.handleBackButton();
+        });
+
+        // Multi-level Background & App Lifecycle Listeners (Android, iOS & Web)
+        // 1. Visibility change: minimize, tab hide, screen lock
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                if (this.state === 'PLAYING') {
+                    this.togglePause();
+                }
+                if (window.sounds && typeof window.sounds.suspend === 'function') {
+                    window.sounds.suspend();
+                }
+                if (this.planetSim) this.planetSim.stop();
+            } else {
+                if (this.state === 'PLAYING') {
+                    this.lastTime = performance.now();
+                    this.accumulator = 0;
+                    if (window.sounds && typeof window.sounds.resume === 'function') {
+                        window.sounds.resume();
+                    }
+                } else if (this.state === 'PLANET_EXPLORATION' && this.planetSim) {
+                    this.planetSim.start();
+                }
+            }
+        });
+
+        // 2. Page hide / blur fallback
+        window.addEventListener('pagehide', () => {
+            if (window.sounds && typeof window.sounds.suspend === 'function') {
+                window.sounds.suspend();
+            }
+        });
+
+        window.addEventListener('blur', () => {
+            if (this.state === 'PLAYING') {
+                this.togglePause();
+            }
+        });
+
+        // 3. Native Capacitor App Lifecycle
+        if (typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
+            window.Capacitor.Plugins.App.addListener('appStateChange', ({ isActive }) => {
+                if (!isActive) {
+                    if (this.state === 'PLAYING') {
+                        this.togglePause();
+                    }
+                    if (window.sounds && typeof window.sounds.suspend === 'function') {
+                        window.sounds.suspend();
+                    }
+                    if (this.planetSim) this.planetSim.stop();
+                } else {
+                    if (this.state === 'PLAYING') {
+                        this.lastTime = performance.now();
+                        this.accumulator = 0;
+                        if (window.sounds && typeof window.sounds.resume === 'function') {
+                            window.sounds.resume();
+                        }
+                    } else if (this.state === 'PLANET_EXPLORATION' && this.planetSim) {
+                        this.planetSim.start();
+                    }
+                }
+            });
+        }
+
+        document.getElementById('startBtn')?.addEventListener('click', () => this.startGame());
+        document.getElementById('restartBtn')?.addEventListener('click', () => this.startGame());
+        document.getElementById('pauseBtn')?.addEventListener('click', () => this.togglePause());
+        document.getElementById('resumeBtn')?.addEventListener('click', () => this.togglePause());
+        document.getElementById('muteBtn')?.addEventListener('click', () => {
             const isMuted = window.sounds.toggleMute();
             document.getElementById('muteBtn').innerText = isMuted ? '🔇' : '🔊';
         });
+
+        const chaosBtn = document.getElementById('chaosBtn');
+        if (chaosBtn) {
+            chaosBtn.addEventListener('click', () => {
+                if (this.state === 'PLAYING') this.toggleChaosTwin();
+            });
+        }
+
+        const tasksBtn = document.getElementById('tasksBtn');
+        if (tasksBtn) {
+            tasksBtn.addEventListener('click', () => this.openTasksModal());
+        }
+
+        const startTasksBtn = document.getElementById('startTasksBtn');
+        if (startTasksBtn) {
+            startTasksBtn.addEventListener('click', () => this.openTasksModal());
+        }
+
+        const startCodexBtn = document.getElementById('startCodexBtn');
+        if (startCodexBtn) {
+            startCodexBtn.addEventListener('click', () => this.openCodex());
+        }
+
+        const gameOverTasksBtn = document.getElementById('gameOverTasksBtn');
+        if (gameOverTasksBtn) {
+            gameOverTasksBtn.addEventListener('click', () => this.openTasksModal());
+        }
+
+        const pauseTasksBtn = document.getElementById('pauseTasksBtn');
+        if (pauseTasksBtn) {
+            pauseTasksBtn.addEventListener('click', () => this.openTasksModal());
+        }
+
+        const mobileTasksBtn = document.getElementById('mobileTasksBtn');
+        if (mobileTasksBtn) {
+            mobileTasksBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.openTasksModal();
+            });
+        }
+
+        const closeTasksBtn = document.getElementById('closeTasksBtn');
+        if (closeTasksBtn) {
+            closeTasksBtn.addEventListener('click', () => this.closeTasksModal());
+        }
+
+        const codexBtn = document.getElementById('codexBtn');
+        if (codexBtn) {
+            codexBtn.addEventListener('click', () => this.openCodex());
+        }
+
+        const closeCodexBtn = document.getElementById('closeCodexBtn');
+        if (closeCodexBtn) {
+            closeCodexBtn.addEventListener('click', () => this.closeCodex());
+        }
+
+        const openCodexFromPlanetBtn = document.getElementById('openCodexFromPlanetBtn');
+        if (openCodexFromPlanetBtn) {
+            openCodexFromPlanetBtn.addEventListener('click', () => this.openCodex());
+        }
+
+        const relaunchBtn = document.getElementById('relaunchBtn');
+        if (relaunchBtn) {
+            relaunchBtn.addEventListener('click', () => this.relaunchFromPlanet());
+        }
+
+        const deployDroneBtn = document.getElementById('deployDroneBtn');
+        if (deployDroneBtn) {
+            deployDroneBtn.addEventListener('click', () => this.deployProbeScan());
+        }
+
+        // Codex filter tab buttons
+        const codexTabs = ['tabAll', 'tabSolar', 'tabExo'];
+        codexTabs.forEach(tabId => {
+            const tabBtn = document.getElementById(tabId);
+            if (tabBtn) {
+                tabBtn.addEventListener('click', () => {
+                    codexTabs.forEach(id => {
+                        const b = document.getElementById(id);
+                        if (b) b.classList.remove('active');
+                    });
+                    tabBtn.classList.add('active');
+                    const filter = tabBtn.getAttribute('data-tab') || 'all';
+                    this.renderCodexGrid(filter);
+                });
+            }
+        });
+
+        const mobileChaosBtn = document.getElementById('mobileChaosBtn');
+        if (mobileChaosBtn) {
+            mobileChaosBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (this.state === 'PLAYING') this.toggleChaosTwin();
+            });
+        }
+
+        const chaosSlider = document.getElementById('chaosOffsetSlider');
+        const chaosLabel = document.getElementById('chaosOffsetLabel');
+        if (chaosSlider && chaosLabel) {
+            chaosSlider.addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value);
+                this.chaosOffset = val;
+                chaosLabel.innerText = `starting difference: ${val < 0.00001 ? val.toExponential(1) : val.toFixed(6)} px`;
+            });
+        }
 
         const mobileBoost = document.getElementById('mobileBoostBtn');
         if (mobileBoost) {
@@ -197,8 +484,129 @@ class Game {
             mobilePhase.addEventListener('click', (e) => {
                 e.stopPropagation();
                 if (this.ship.triggerPhaseShift()) {
+                    if (window.haptics) window.haptics.phaseShift();
                     this.addFloatingText('QUANTUM PHASE SHIFT!', this.ship.x, this.ship.y - 25, '#00f7ff');
                 }
+            });
+        }
+
+        const mobileDilation = document.getElementById('mobileDilationBtn');
+        if (mobileDilation) {
+            mobileDilation.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (this.ship.triggerTimeDilation()) {
+                    if (window.haptics) window.haptics.timeDilation();
+                    this.addFloatingText('TIME DILATION [SLOW-MO]!', this.ship.x, this.ship.y - 25, '#a855f7');
+                    this.triggerScreenShake(3);
+                }
+            });
+        }
+
+        const mobileCodex = document.getElementById('mobileCodexBtn');
+        if (mobileCodex) {
+            mobileCodex.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (window.haptics) window.haptics.buttonTap();
+                this.openCodex();
+            });
+        }
+
+        const mobilePitchUp = document.getElementById('mobilePitchUpBtn');
+        if (mobilePitchUp) {
+            const startUp = (e) => { e.preventDefault(); e.stopPropagation(); this.input.upHeld = true; if (window.haptics) window.haptics.buttonTap(); };
+            const stopUp = (e) => { e.preventDefault(); e.stopPropagation(); this.input.upHeld = false; };
+            mobilePitchUp.addEventListener('pointerdown', startUp);
+            mobilePitchUp.addEventListener('pointerup', stopUp);
+            mobilePitchUp.addEventListener('pointerleave', stopUp);
+            mobilePitchUp.addEventListener('pointercancel', stopUp);
+        }
+
+        const mobilePitchDown = document.getElementById('mobilePitchDownBtn');
+        if (mobilePitchDown) {
+            const startDown = (e) => { e.preventDefault(); e.stopPropagation(); this.input.downHeld = true; if (window.haptics) window.haptics.buttonTap(); };
+            const stopDown = (e) => { e.preventDefault(); e.stopPropagation(); this.input.downHeld = false; };
+            mobilePitchDown.addEventListener('pointerdown', startDown);
+            mobilePitchDown.addEventListener('pointerup', stopDown);
+            mobilePitchDown.addEventListener('pointerleave', stopDown);
+            mobilePitchDown.addEventListener('pointercancel', stopDown);
+        }
+
+        // Settings Modal Wiring
+        const settingsBtns = ['settingsBtn', 'startSettingsBtn', 'gameOverSettingsBtn', 'pauseSettingsBtn'];
+        settingsBtns.forEach(id => {
+            const btn = document.getElementById(id);
+            if (btn) btn.addEventListener('click', () => { if (window.haptics) window.haptics.buttonTap(); this.openSettingsModal(); });
+        });
+
+        const closeSettingsBtn = document.getElementById('closeSettingsBtn');
+        if (closeSettingsBtn) {
+            closeSettingsBtn.addEventListener('click', () => { if (window.haptics) window.haptics.buttonTap(); this.closeSettingsModal(); });
+        }
+
+        const masterVol = document.getElementById('masterVolSlider');
+        const masterVal = document.getElementById('masterVolVal');
+        if (masterVol && window.sounds) {
+            masterVol.value = window.sounds.masterVolume || 1.0;
+            if (masterVal) masterVal.innerText = `${Math.round((window.sounds.masterVolume || 1.0) * 100)}%`;
+            masterVol.addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value);
+                if (window.sounds.setMasterVolume) window.sounds.setMasterVolume(val);
+                if (masterVal) masterVal.innerText = `${Math.round(val * 100)}%`;
+            });
+        }
+
+        const musicVol = document.getElementById('musicVolSlider');
+        const musicVal = document.getElementById('musicVolVal');
+        if (musicVol && window.sounds) {
+            musicVol.value = window.sounds.musicVolume || 0.75;
+            if (musicVal) musicVal.innerText = `${Math.round((window.sounds.musicVolume || 0.75) * 100)}%`;
+            musicVol.addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value);
+                if (window.sounds.setMusicVolume) window.sounds.setMusicVolume(val);
+                if (musicVal) musicVal.innerText = `${Math.round(val * 100)}%`;
+            });
+        }
+
+        const sfxVol = document.getElementById('sfxVolSlider');
+        const sfxVal = document.getElementById('sfxVolVal');
+        if (sfxVol && window.sounds) {
+            sfxVol.value = window.sounds.sfxVolume || 1.0;
+            if (sfxVal) sfxVal.innerText = `${Math.round((window.sounds.sfxVolume || 1.0) * 100)}%`;
+            sfxVol.addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value);
+                if (window.sounds.setSfxVolume) window.sounds.setSfxVolume(val);
+                if (sfxVal) sfxVal.innerText = `${Math.round(val * 100)}%`;
+            });
+        }
+
+        const hapticsToggle = document.getElementById('hapticsToggle');
+        if (hapticsToggle && window.haptics) {
+            hapticsToggle.checked = window.haptics.enabled;
+            hapticsToggle.addEventListener('change', (e) => {
+                window.haptics.setEnabled(e.target.checked);
+                if (e.target.checked) window.haptics.buttonTap();
+            });
+        }
+
+        const shakeSlider = document.getElementById('screenShakeSlider');
+        const shakeVal = document.getElementById('screenShakeVal');
+        if (shakeSlider) {
+            shakeSlider.value = this.screenShakeIntensity || 1.0;
+            if (shakeVal) shakeVal.innerText = `${Math.round((this.screenShakeIntensity || 1.0) * 100)}%`;
+            shakeSlider.addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value);
+                this.screenShakeIntensity = val;
+                if (typeof localStorage !== 'undefined') localStorage.setItem('slingshot_screenshake', val.toString());
+                if (shakeVal) shakeVal.innerText = `${Math.round(val * 100)}%`;
+            });
+        }
+
+        const cameraLeadToggle = document.getElementById('cameraLeadToggle');
+        if (cameraLeadToggle) {
+            cameraLeadToggle.checked = this.cameraLeadEnabled;
+            cameraLeadToggle.addEventListener('change', (e) => {
+                this.cameraLeadEnabled = e.target.checked;
+                if (typeof localStorage !== 'undefined') localStorage.setItem('slingshot_cameralead', e.target.checked ? 'true' : 'false');
             });
         }
     }
@@ -243,7 +651,16 @@ class Game {
             this.ship.lastTetherAngle = Math.atan2(this.ship.y - bestStar.y, this.ship.x - bestStar.x);
             this.ship.orbitRotationAccumulator = 0;
 
+            if (this.twin) {
+                this.twin.isTethered = true;
+                this.twin.tetherStar = bestStar;
+                this.twin.tetherLength = dist;
+                this.twin.lastTetherAngle = Math.atan2(this.twin.y - bestStar.y, this.twin.x - bestStar.x);
+                this.twin.orbitRotationAccumulator = 0;
+            }
+
             window.sounds.playTetherAttach();
+            if (window.haptics) window.haptics.tetherAttach();
             this.triggerScreenShake(3);
 
             if (bestStar.isBinary) {
@@ -255,6 +672,13 @@ class Game {
     onTetherEnd() {
         this.input.tetherHeld = false;
 
+        // Mirror tether release onto twin (pure ghost: no score, combo or sound)
+        if (this.twin && this.twin.isTethered && this.twin.tetherStar) {
+            this.physics.evaluateRelease(this.twin, this.twin.tetherStar);
+            this.twin.isTethered = false;
+            this.twin.tetherStar = null;
+        }
+
         if (this.ship.isTethered && this.ship.tetherStar) {
             const star = this.ship.tetherStar;
             const result = this.physics.evaluateRelease(this.ship, star);
@@ -264,15 +688,20 @@ class Game {
                 this.combo++;
                 this.comboTimer = 7.0;
                 this.perfectSlingshots++;
+                if (this.taskManager) {
+                    this.taskManager.checkAll();
+                }
                 const bonus = 300 * this.combo;
                 this.score += bonus;
                 window.sounds.playPerfectLaunch();
+                if (window.haptics) window.haptics.perfectLaunch();
 
                 const tag = star.isBinary ? 'BINARY SLINGSHOT! +' : 'PERFECT SLINGSHOT! +';
                 this.addFloatingText(`${tag}${bonus}`, this.ship.x, this.ship.y - 20, '#00ffff');
                 this.triggerScreenShake(6);
                 this.particles.emitExplosion(this.ship.x, this.ship.y, '#00ffff', 25);
             } else {
+                if (window.haptics) window.haptics.slingshotRelease(result.multiplier);
                 this.score += 50 * this.combo;
                 this.comboTimer = 5.0;
             }
@@ -283,7 +712,21 @@ class Game {
     }
 
     startGame() {
-        window.sounds.init();
+        if (this.probeScanTimeout) {
+            clearTimeout(this.probeScanTimeout);
+            this.probeScanTimeout = null;
+        }
+        if (window.sounds) {
+            window.sounds.stopTetherHum();
+            window.sounds.init();
+            window.sounds.resume();
+        }
+        if (this.twin) {
+            this.removeChaosTwin();
+        }
+        if (this.planetSim) {
+            this.planetSim.stop();
+        }
         this.state = 'PLAYING';
         this.score = 0;
         this.combo = 1;
@@ -291,6 +734,7 @@ class Game {
         this.maxSpeed = 0;
         this.perfectSlingshots = 0;
         this.worldGenX = 50;
+        this.planetSpawnCounter = 0;
 
         this.stars = [];
         this.asteroids = [];
@@ -307,43 +751,67 @@ class Game {
 
         // Guaranteed welcoming starter constellation right ahead of player
         this.stars.push(new CelestialBody(420, 30, 'hypergiant'));
-        this.stars.push(new CelestialBody(780, -40, 'pulsar'));
-        this.stars.push(new CelestialBody(1140, 50, 'binary'));
+        this.stars.push(new CelestialBody(740, -40, 'pulsar'));
+
+        // Starter Mars planet within reach for immediate exploration or slingshot
+        const solarList = (typeof SOLAR_PLANETS !== 'undefined') ? SOLAR_PLANETS : [];
+        const starterMars = solarList.find(p => p.id === 'mars') || solarList[0];
+        if (starterMars) {
+            this.stars.push(new CelestialBody(1060, -60, 'planet', starterMars));
+        }
+
+        this.stars.push(new CelestialBody(1380, 50, 'binary'));
         this.collectibles.push(new PhotonCore(250, 10));
         this.collectibles.push(new PhotonCore(560, -10));
-        this.collectibles.push(new PhotonCore(940, 20));
+        this.collectibles.push(new PhotonCore(880, 20));
 
-        this.worldGenX = 1140;
+        this.worldGenX = 1380;
         this.generateWorld(3000);
 
         // Center camera immediately on the ship
         this.camera.x = this.ship.x + 140;
         this.camera.y = this.ship.y;
 
-        document.getElementById('startScreen').classList.add('hidden');
-        document.getElementById('gameOverScreen').classList.add('hidden');
-        document.getElementById('pauseScreen').classList.add('hidden');
-        document.getElementById('hud').classList.remove('hidden');
+        document.getElementById('startScreen')?.classList.add('hidden');
+        document.getElementById('gameOverScreen')?.classList.add('hidden');
+        document.getElementById('pauseScreen')?.classList.add('hidden');
+        document.getElementById('planetExplorationScreen')?.classList.add('hidden');
+        document.getElementById('codexScreen')?.classList.add('hidden');
+        document.getElementById('tasksModal')?.classList.add('hidden');
+        document.getElementById('settingsModal')?.classList.add('hidden');
+        this.updateHangarPilotStrip();
+        document.getElementById('hud')?.classList.remove('hidden');
     }
 
     togglePause() {
+        const pauseScreen = document.getElementById('pauseScreen');
         if (this.state === 'PLAYING') {
             this.state = 'PAUSED';
-            document.getElementById('pauseScreen').classList.remove('hidden');
+            if (pauseScreen) pauseScreen.classList.remove('hidden');
+            if (window.sounds && typeof window.sounds.suspend === 'function') {
+                window.sounds.stopTetherHum();
+                window.sounds.suspend();
+            }
         } else if (this.state === 'PAUSED') {
             this.state = 'PLAYING';
             this.lastTime = performance.now();
             this.accumulator = 0;
-            document.getElementById('pauseScreen').classList.add('hidden');
+            if (pauseScreen) pauseScreen.classList.add('hidden');
+            if (window.sounds && typeof window.sounds.resume === 'function') {
+                window.sounds.resume();
+            }
         }
     }
 
     triggerScreenShake(intensity) {
-        this.camera.shake = Math.max(this.camera.shake, intensity);
+        const shakeMultiplier = (this.screenShakeIntensity !== undefined) ? this.screenShakeIntensity : 1.0;
+        this.camera.shake = Math.max(this.camera.shake, intensity * shakeMultiplier);
     }
 
     generateWorld(targetX) {
         const types = ['hypergiant', 'hypergiant', 'redgiant', 'pulsar', 'whitedwarf', 'binary', 'supernova'];
+        const solarList = (typeof SOLAR_PLANETS !== 'undefined') ? SOLAR_PLANETS : [];
+        const exoList = (typeof KNOWN_EXOPLANETS !== 'undefined') ? KNOWN_EXOPLANETS : [];
 
         while (this.worldGenX < targetX) {
             this.worldGenX += 280 + Math.random() * 180;
@@ -352,7 +820,16 @@ class Game {
             const starY = laneY + (Math.random() - 0.5) * 450;
             const type = types[Math.floor(Math.random() * types.length)];
 
-            this.stars.push(new CelestialBody(this.worldGenX, starY, type));
+            this.planetSpawnCounter++;
+            const isPlanetSpawn = (this.planetSpawnCounter % 3 === 0);
+
+            if (isPlanetSpawn && (solarList.length > 0 || exoList.length > 0)) {
+                const list = (this.planetSpawnCounter % 6 === 0 && exoList.length > 0) ? exoList : solarList;
+                const pData = list[Math.floor(Math.random() * list.length)];
+                this.stars.push(new CelestialBody(this.worldGenX, starY, 'planet', pData));
+            } else {
+                this.stars.push(new CelestialBody(this.worldGenX, starY, type));
+            }
 
             // Occasionally spawn a wormhole
             if (Math.random() < 0.12 && this.worldGenX > 900) {
@@ -382,6 +859,415 @@ class Game {
         }
     }
 
+    // Planetary Exploration & Science Codex Methods
+    startPlanetaryExploration(planetData, planetBody) {
+        if (!planetData) return;
+        this.state = 'PLANET_EXPLORATION';
+        this.currentPlanet = planetData;
+        if (planetData.category === 'exoplanet') {
+            this.exoplanetExplored = true;
+        }
+        if (window.sounds) window.sounds.stopTetherHum();
+
+        // Release tether if ship was currently hooked
+        if (this.ship.isTethered) {
+            this.ship.isTethered = false;
+            this.ship.tetherStar = null;
+        }
+
+        // Add to persistent codex
+        const isNewDiscovery = !this.discoveredPlanets.has(planetData.id);
+        this.discoveredPlanets.add(planetData.id);
+        localStorage.setItem('slingshot_codex', JSON.stringify([...this.discoveredPlanets]));
+
+        if (this.taskManager) {
+            this.taskManager.checkAll();
+        }
+
+        // Discovery Bonus
+        const bonusPts = isNewDiscovery ? 600 : 300;
+        this.score += bonusPts;
+        if (window.sounds) window.sounds.playCollect();
+        if (window.haptics) window.haptics.planetTouchdown();
+
+        // Populate Modal Telemetry
+        const nameEl = document.getElementById('planetName');
+        if (nameEl) nameEl.innerText = planetData.name.toUpperCase();
+
+        const catPill = document.getElementById('planetCategoryPill');
+        const catLabel = document.getElementById('planetCategoryLabel');
+        const statDot = document.getElementById('planetStatusDot');
+        if (catLabel) {
+            if (planetData.category === 'solar') {
+                catLabel.innerText = 'SOLAR SYSTEM EXPLORATION // SOL PROTOCOL';
+                if (catPill) {
+                    catPill.style.borderColor = 'rgba(56, 189, 248, 0.4)';
+                    catPill.style.color = '#38bdf8';
+                }
+                if (statDot) statDot.style.background = '#38bdf8';
+            } else {
+                catLabel.innerText = 'DEEP SPACE EXOPLANET DOSSIER // KNOWN ALIEN WORLD';
+                if (catPill) {
+                    catPill.style.borderColor = 'rgba(192, 132, 252, 0.4)';
+                    catPill.style.color = '#c084fc';
+                }
+                if (statDot) statDot.style.background = '#c084fc';
+            }
+        }
+
+        const tagEl = document.getElementById('planetTagline');
+        if (tagEl) tagEl.innerText = planetData.tagline;
+
+        const typeBadge = document.getElementById('planetTypeBadge');
+        if (typeBadge) typeBadge.innerText = (planetData.category === 'solar' ? 'SOLAR SYSTEM' : 'EXOPLANET');
+
+        const gravBadge = document.getElementById('planetGravityBadge');
+        if (gravBadge) gravBadge.innerText = planetData.gravityG || '1.0g';
+
+        const telGrav = document.getElementById('telGravity');
+        if (telGrav) telGrav.innerText = planetData.gravityMss ? `${planetData.gravityMss} m/s² (${planetData.gravityG})` : (planetData.gravityG || 'N/A');
+
+        const telPress = document.getElementById('telPressure');
+        if (telPress) telPress.innerText = planetData.pressure || 'Vacuum / Unknown';
+
+        const telTemp = document.getElementById('telTemp');
+        if (telTemp) telTemp.innerText = planetData.temperature || 'N/A';
+
+        const telDist = document.getElementById('telDistance');
+        if (telDist) telDist.innerText = planetData.distanceFromSun || planetData.distanceFromHostStar || 'N/A';
+
+        const telDay = document.getElementById('telDay');
+        if (telDay) telDay.innerText = planetData.dayLength || 'N/A';
+
+        const telYear = document.getElementById('telYear');
+        if (telYear) telYear.innerText = planetData.yearLength || 'N/A';
+
+        const telAtmo = document.getElementById('telAtmosphere');
+        if (telAtmo) telAtmo.innerText = planetData.atmosphere || 'Trace';
+
+        const factHeading = document.getElementById('dossierFactHeading');
+        const factVal = document.getElementById('telMissionFact');
+        if (factHeading && factVal) {
+            if (planetData.category === 'solar') {
+                factHeading.innerText = 'HISTORIC EXPLORATION MISSION:';
+                factVal.innerText = planetData.missionFact;
+            } else {
+                factHeading.innerText = 'AUTHENTIC EXOPLANET ASTROPHYSICS:';
+                factVal.innerText = planetData.exoplanetFact;
+            }
+        }
+
+        const expHeading = document.getElementById('dossierExpHeading');
+        const expVal = document.getElementById('telExperience');
+        if (expHeading && expVal) {
+            expHeading.innerText = planetData.category === 'solar' ? 'SURFACE LANDING SIMULATION:' : 'EXOPLANETARY ENVIRONMENT:';
+            expVal.innerText = planetData.experienceText;
+        }
+
+        const scanTag = document.getElementById('planetScanTag');
+        if (scanTag) scanTag.innerText = 'ATMOSPHERIC TELEMETRY: ACTIVE';
+        const scanStatus = document.getElementById('planetScanStatus');
+        if (scanStatus) scanStatus.innerText = 'ORBITAL TOUCHDOWN CONFIRMED';
+
+        const droneBtn = document.getElementById('deployDroneBtn');
+        if (droneBtn) {
+            droneBtn.innerText = 'DEPLOY SURFACE PROBE SCAN';
+            droneBtn.disabled = false;
+            droneBtn.style.opacity = '1.0';
+        }
+
+        // Start Surface Simulation Canvas
+        const simCanvas = document.getElementById('planetSimCanvas');
+        if (simCanvas) {
+            if (!this.planetSim) {
+                const SimClass = (typeof PlanetSimulationEngine !== 'undefined') ? PlanetSimulationEngine : window.PlanetSimulationEngine;
+                if (SimClass) {
+                    this.planetSim = new SimClass(simCanvas);
+                }
+            }
+            if (this.planetSim) {
+                this.planetSim.setPlanet(planetData);
+                this.planetSim.start();
+            }
+        }
+
+        const explorationModal = document.getElementById('planetExplorationScreen');
+        if (explorationModal) explorationModal.classList.remove('hidden');
+
+        const hud = document.getElementById('hud');
+        if (hud) hud.classList.add('hidden');
+    }
+
+    deployProbeScan() {
+        if (!this.planetSim || !this.currentPlanet) return;
+        this.probesDeployed = (this.probesDeployed || 0) + 1;
+        if (this.taskManager) {
+            this.taskManager.checkAll();
+        }
+        this.planetSim.deployDrone();
+        if (window.sounds) window.sounds.playTetherAttach();
+        if (window.haptics) window.haptics.buttonTap();
+
+        const scanTag = document.getElementById('planetScanTag');
+        if (scanTag) scanTag.innerText = 'SURFACE PROBE: SCANNING BIOSPHERE...';
+
+        const scanStatus = document.getElementById('planetScanStatus');
+        if (scanStatus) scanStatus.innerText = 'QUADCOPTER PROBE DEPLOYED';
+
+        const droneBtn = document.getElementById('deployDroneBtn');
+        if (droneBtn) {
+            droneBtn.innerText = 'PROBE TELEMETRY TRANSMITTING...';
+            droneBtn.disabled = true;
+            droneBtn.style.opacity = '0.6';
+            this.probeScanTimeout = setTimeout(() => {
+                this.probeScanTimeout = null;
+                if (droneBtn) {
+                    droneBtn.innerText = 'SURFACE SCAN COMPLETE (+250 PTS)';
+                    droneBtn.disabled = false;
+                    droneBtn.style.opacity = '1.0';
+                }
+                if (scanTag) scanTag.innerText = 'SURFACE TELEMETRY: HARVESTED';
+                if (scanStatus) scanStatus.innerText = 'SPECTROMETRIC MAPPING VERIFIED';
+                this.score += 250;
+                if (window.sounds) window.sounds.playCollect();
+                this.addFloatingText('PROBE DATA +250 PTS', this.ship.x, this.ship.y - 20, '#00f7ff');
+            }, 1800);
+        }
+    }
+
+    relaunchFromPlanet() {
+        if (this.probeScanTimeout) {
+            clearTimeout(this.probeScanTimeout);
+            this.probeScanTimeout = null;
+        }
+        if (this.planetSim) {
+            this.planetSim.stop();
+        }
+
+        const explorationModal = document.getElementById('planetExplorationScreen');
+        if (explorationModal) explorationModal.classList.add('hidden');
+
+        const hud = document.getElementById('hud');
+        if (hud) hud.classList.remove('hidden');
+
+        // Restore vessel systems fully
+        this.ship.shield = this.ship.maxShield;
+        this.ship.fuel = this.ship.maxFuel;
+        this.ship.invulnerableTimer = 2.2;
+
+        // Position vessel forward and grant massive escape velocity slingshot boost
+        this.ship.x += 160;
+        this.ship.vx = Math.max(540, this.ship.vx + 280);
+        this.ship.vy = (Math.random() - 0.5) * 60;
+
+        // Push event horizon back to grant safe runway
+        this.horizon.x = Math.min(this.horizon.x, this.ship.x - 700);
+
+        // Score reward
+        const bonus = 800;
+        this.score += bonus;
+        if (window.sounds) window.sounds.playSlingshotRelease(2.5);
+        if (window.haptics) window.haptics.perfectLaunch();
+        this.triggerScreenShake(12);
+        this.particles.emitShockwave(this.ship.x, this.ship.y, 220, '#00f7ff', 0.65);
+        this.particles.emitExplosion(this.ship.x, this.ship.y, '#ffffff', 45);
+        this.addFloatingText(`RELAUNCH BOOST! +${bonus}`, this.ship.x, this.ship.y - 30, '#00f7ff');
+        this.addFloatingText('SHIELDS & REACTOR 100%', this.ship.x, this.ship.y - 10, '#22c55e');
+
+        this.state = 'PLAYING';
+        this.lastTime = performance.now();
+        this.accumulator = 0;
+    }
+
+    openCodex(filter = 'all') {
+        const codexScreen = document.getElementById('codexScreen');
+        if (codexScreen) codexScreen.classList.remove('hidden');
+        this.renderCodexGrid(filter);
+    }
+
+    closeCodex() {
+        const codexScreen = document.getElementById('codexScreen');
+        if (codexScreen) codexScreen.classList.add('hidden');
+    }
+
+    renderCodexGrid(filter = 'all') {
+        this.codexActiveTab = filter;
+        const grid = document.getElementById('codexGrid');
+        if (!grid) return;
+        grid.innerHTML = '';
+
+        const allList = (typeof ALL_PLANETS !== 'undefined') ? ALL_PLANETS : [];
+        const solarList = (typeof SOLAR_PLANETS !== 'undefined') ? SOLAR_PLANETS : [];
+        const exoList = (typeof KNOWN_EXOPLANETS !== 'undefined') ? KNOWN_EXOPLANETS : [];
+
+        let planetsToDisplay = allList;
+        if (filter === 'solar') {
+            planetsToDisplay = solarList;
+        } else if (filter === 'exoplanet') {
+            planetsToDisplay = exoList;
+        }
+
+        // Update counts
+        const allDiscovered = allList.filter(p => this.discoveredPlanets.has(p.id)).length;
+        const solarDiscovered = solarList.filter(p => this.discoveredPlanets.has(p.id)).length;
+        const exoDiscovered = exoList.filter(p => this.discoveredPlanets.has(p.id)).length;
+
+        const countAll = document.getElementById('countAll');
+        if (countAll) countAll.innerText = `${allDiscovered}/${allList.length}`;
+        const countSolar = document.getElementById('countSolar');
+        if (countSolar) countSolar.innerText = `${solarDiscovered}/${solarList.length}`;
+        const countExo = document.getElementById('countExo');
+        if (countExo) countExo.innerText = `${exoDiscovered}/${exoList.length}`;
+
+        planetsToDisplay.forEach(p => {
+            const isDiscovered = this.discoveredPlanets.has(p.id);
+            const card = document.createElement('div');
+            card.className = `codex-card ${isDiscovered ? 'codex-card-discovered' : 'undiscovered'}`;
+
+            const iconHtml = `<span class="codex-card-planet-icon" style="background: ${isDiscovered ? p.color : '#334155'}; box-shadow: 0 0 8px ${isDiscovered ? p.color : 'transparent'};"></span>`;
+            const badgeText = p.category === 'solar' ? 'SOL' : 'EXO';
+            const badgeStyle = p.category === 'solar' ? 'color: #38bdf8; border-color: rgba(56, 189, 248, 0.4);' : 'color: #c084fc; border-color: rgba(192, 132, 252, 0.4);';
+
+            card.innerHTML = `
+                <div class="codex-card-header">
+                    ${iconHtml}
+                    <span class="spec-pill" style="${badgeStyle}">${isDiscovered ? badgeText : 'LOCKED'}</span>
+                </div>
+                <div class="codex-card-name">${isDiscovered ? p.name : 'Unknown Planet'}</div>
+                <div class="codex-card-tagline">${isDiscovered ? p.tagline : 'Explore deep space to make contact and log planetary telemetry.'}</div>
+                <div class="codex-card-stats">
+                    <span>${isDiscovered ? (p.gravityG || '1.0g') : '?.??g'}</span> &bull; 
+                    <span>${isDiscovered ? (p.temperature.split('[')[0].trim()) : '??? K'}</span>
+                </div>
+            `;
+
+            if (isDiscovered) {
+                card.addEventListener('click', () => {
+                    this.closeCodex();
+                    this.startPlanetaryExploration(p, null);
+                });
+            }
+
+            grid.appendChild(card);
+        });
+    }
+
+    openTasksModal() {
+        const tasksModal = document.getElementById('tasksModal');
+        if (tasksModal) {
+            tasksModal.classList.remove('hidden');
+            this.renderTasksGrid();
+        }
+    }
+
+    closeTasksModal() {
+        const tasksModal = document.getElementById('tasksModal');
+        if (tasksModal) {
+            tasksModal.classList.add('hidden');
+        }
+    }
+
+    renderTasksGrid() {
+        if (!this.taskManager) return;
+        const grid = document.getElementById('tasksGrid');
+        if (!grid) return;
+        grid.innerHTML = '';
+
+        const completedCount = this.taskManager.getCompletedCount();
+        const totalCount = this.taskManager.getTotalCount();
+        const rank = this.taskManager.getRank();
+
+        const rankBadge = document.getElementById('pilotRankBadge');
+        if (rankBadge) {
+            rankBadge.innerText = `${rank.badge} // ${rank.title}`;
+        }
+
+        const subtitle = document.getElementById('tasksOverviewSubtitle');
+        if (subtitle) {
+            subtitle.innerText = `FLIGHT OBJECTIVES \u2022 ${completedCount}/${totalCount} COMPLETED`;
+        }
+
+        const tasksList = (typeof MISSION_TASKS !== 'undefined') ? MISSION_TASKS : (window.MISSION_TASKS || []);
+        for (const task of tasksList) {
+            const isCompleted = this.taskManager.completedTaskIds.has(task.id);
+            const status = task.check(this);
+            const pct = isCompleted ? 100 : Math.floor(Math.min(1.0, status.progress) * 100);
+
+            const card = document.createElement('div');
+            card.className = `task-card ${isCompleted ? 'task-card-completed' : ''}`;
+            card.innerHTML = `
+                <div class="task-header-row">
+                    <div class="task-title-group">
+                        <span class="task-icon">${task.icon}</span>
+                        <div class="task-title">${task.title}</div>
+                    </div>
+                    <span class="task-reward-pill">+${task.reward} PTS</span>
+                </div>
+                <div class="task-desc">${task.description}</div>
+                <div class="task-progress-box">
+                    <div class="task-progress-meta">
+                        <span>${isCompleted ? 'COMPLETED' : `${status.current} / ${status.target} ${task.unit}`}</span>
+                        <span>${pct}%</span>
+                    </div>
+                    <div class="task-bar-track">
+                        <div class="task-bar-fill" style="width: ${pct}%;"></div>
+                    </div>
+                </div>
+            `;
+            grid.appendChild(card);
+        }
+    }
+
+    openSettingsModal() {
+        const settingsModal = document.getElementById('settingsModal');
+        if (settingsModal) {
+            settingsModal.classList.remove('hidden');
+        }
+    }
+
+    closeSettingsModal() {
+        const settingsModal = document.getElementById('settingsModal');
+        if (settingsModal) {
+            settingsModal.classList.add('hidden');
+        }
+    }
+
+    handleBackButton() {
+        const settingsModal = document.getElementById('settingsModal');
+        if (settingsModal && !settingsModal.classList.contains('hidden')) {
+            this.closeSettingsModal();
+            return;
+        }
+
+        const tasksModal = document.getElementById('tasksModal');
+        if (tasksModal && !tasksModal.classList.contains('hidden')) {
+            this.closeTasksModal();
+            return;
+        }
+
+        const codexScreen = document.getElementById('codexScreen');
+        if (codexScreen && !codexScreen.classList.contains('hidden')) {
+            this.closeCodex();
+            return;
+        }
+
+        const planetExplorationScreen = document.getElementById('planetExplorationScreen');
+        if (planetExplorationScreen && !planetExplorationScreen.classList.contains('hidden')) {
+            this.relaunchFromPlanet();
+            return;
+        }
+
+        if (this.state === 'PLAYING') {
+            this.togglePause();
+            return;
+        }
+
+        if (this.state === 'PAUSED') {
+            this.togglePause();
+            return;
+        }
+    }
+
     cullWorld() {
         const cleanupThreshold = this.horizon.x - 500;
         this.stars = this.stars.filter(s => s.x > cleanupThreshold);
@@ -393,7 +1279,17 @@ class Game {
     triggerGameOver(reason) {
         this.state = 'GAMEOVER';
         this.gameOverReason = reason;
-        window.sounds.playExplosion();
+        if (this.twin) {
+            this.removeChaosTwin();
+        }
+        if (window.sounds) {
+            window.sounds.stopTetherHum();
+            window.sounds.stopMusic();
+            window.sounds.playExplosion();
+        } else {
+            window.sounds.playExplosion();
+        }
+        if (window.haptics) window.haptics.hullDamage();
         this.triggerScreenShake(20);
         this.particles.emitExplosion(this.ship.x, this.ship.y, '#ff0055', 70);
 
@@ -423,9 +1319,128 @@ class Game {
         });
     }
 
+    // Chaos Twin Methods
+    cloneShip(source, offsetX = CHAOS_OFFSET) {
+        const twin = new Ship(source.x + offsetX, source.y, source.shipClass);
+        twin.vx = source.vx;
+        twin.vy = source.vy;
+        twin.angle = source.angle;
+        twin.radius = source.radius;
+        twin.fuel = source.fuel;
+        twin.shield = source.shield;
+        twin.isTethered = source.isTethered;
+        twin.tetherStar = source.tetherStar;
+        twin.tetherLength = source.tetherLength;
+        twin.orbitRotationAccumulator = source.orbitRotationAccumulator;
+        if (source.isTethered && source.tetherStar) {
+            twin.lastTetherAngle = Math.atan2(twin.y - source.tetherStar.y, twin.x - source.tetherStar.x);
+        } else {
+            twin.lastTetherAngle = source.lastTetherAngle;
+        }
+        twin.isBoosting = source.isBoosting;
+        twin.invulnerableTimer = source.invulnerableTimer;
+        twin.phaseShiftActive = source.phaseShiftActive;
+        twin.phaseShiftTimer = source.phaseShiftTimer;
+        twin.phaseShiftCooldown = source.phaseShiftCooldown;
+        twin.timeDilationActive = source.timeDilationActive;
+        twin.timeDilationTimer = source.timeDilationTimer;
+        twin.timeDilationCooldown = source.timeDilationCooldown;
+        return twin;
+    }
+
+    toggleChaosTwin() {
+        if (this.state !== 'PLAYING') return;
+        if (this.twin) {
+            this.removeChaosTwin();
+            this.addFloatingText('CHAOS TWIN REMOVED', this.ship.x, this.ship.y - 30, '#94a3b8');
+        } else {
+            this.spawnChaosTwin();
+            this.addFloatingText('CHAOS TWIN SPAWNED!', this.ship.x, this.ship.y - 30, '#00f7ff');
+        }
+    }
+
+    spawnChaosTwin() {
+        this.twin = this.cloneShip(this.ship, this.chaosOffset);
+        this.twinTrail = [{ x: this.twin.x, y: this.twin.y }];
+        this.chaosTime = 0;
+        this.chaosLogTimer = 0;
+        console.log(`[Chaos Twin] Spawned. Starting difference: ${this.chaosOffset} px`);
+        const panel = document.getElementById('chaosPanel');
+        if (panel) panel.classList.remove('hidden');
+        const mobBtn = document.getElementById('mobileChaosBtn');
+        if (mobBtn) mobBtn.classList.add('active');
+        this.updateChaosHUD(this.chaosOffset);
+    }
+
+    removeChaosTwin() {
+        this.twin = null;
+        this.twinTrail = [];
+        this.chaosTime = 0;
+        this.chaosLogTimer = 0;
+        const panel = document.getElementById('chaosPanel');
+        if (panel) panel.classList.add('hidden');
+        const mobBtn = document.getElementById('mobileChaosBtn');
+        if (mobBtn) mobBtn.classList.remove('active');
+        console.log('[Chaos Twin] Removed.');
+    }
+
+    updateChaosHUD(separation) {
+        const sepEl = document.getElementById('chaosSeparation');
+        if (sepEl) {
+            sepEl.innerText = separation.toExponential(3) + ' px';
+        }
+        const timeEl = document.getElementById('chaosTime');
+        if (timeEl) {
+            timeEl.innerText = this.chaosTime.toFixed(1) + ' s';
+        }
+    }
+
     // Step physics at fixed dt (1/120s)
     update(dt) {
         if (this.state !== 'PLAYING') return;
+
+        // 1. Check Campaign Expedition Mission Completion
+        if (this.campaign && this.campaign.isCampaignMode && this.campaign.currentLevel) {
+            this.campaignElapsedTime += dt;
+            const completion = this.campaign.checkLevelCompletion(this, this.campaignElapsedTime);
+            if (completion && completion.completed) {
+                this.triggerLevelComplete(completion);
+                return;
+            }
+        }
+
+        // 2. Interstellar Relativistic Time Dilation & Ticking Pulse
+        const hudTimeDilation = document.getElementById('hudTimeDilation');
+        if (this.ship.timeDilationActive) {
+            this.tickingSoundTimer -= dt;
+            if (this.tickingSoundTimer <= 0) {
+                if (typeof sounds !== 'undefined' && sounds.playTickingPulse) sounds.playTickingPulse();
+                this.tickingSoundTimer = 0.65;
+            }
+            if (hudTimeDilation) {
+                hudTimeDilation.innerText = '0.40x [DILATED]';
+                hudTimeDilation.style.color = '#c084fc';
+            }
+        } else {
+            if (hudTimeDilation) {
+                hudTimeDilation.innerText = '1.00x';
+                hudTimeDilation.style.color = '#94a3b8';
+            }
+        }
+
+        // 3. Singularity Event Horizon Proximity Warning Overlay
+        const horizonGap = this.ship.x - this.horizon.x;
+        const warningOverlay = document.getElementById('horizonWarningOverlay');
+        if (horizonGap < 480) {
+            if (warningOverlay) warningOverlay.classList.remove('hidden');
+            this.sirenPulseTimer -= dt;
+            if (this.sirenPulseTimer <= 0) {
+                if (typeof sounds !== 'undefined' && sounds.playWarningPulse) sounds.playWarningPulse();
+                this.sirenPulseTimer = 0.55;
+            }
+        } else {
+            if (warningOverlay) warningOverlay.classList.add('hidden');
+        }
 
         const timeScale = this.ship.timeDilationActive ? 0.4 : 1.0;
 
@@ -470,6 +1485,80 @@ class Game {
         }
 
         this.ship.update(dt);
+
+        // Chaos Twin Update & Input Mirroring
+        if (this.twin) {
+            this.chaosTime += dt;
+            this.chaosLogTimer += dt;
+
+            // Mirror attitude inputs
+            if (this.input.upHeld) {
+                this.twin.vy -= 300 * dt;
+            }
+            if (this.input.downHeld) {
+                this.twin.vy += 300 * dt;
+            }
+            if (this.input.leftHeld) {
+                this.twin.vx = Math.max(220, this.twin.vx - 180 * dt);
+            }
+            if (this.input.rightHeld) {
+                this.twin.vx += 220 * dt;
+            }
+
+            // Mirror drift stabilization
+            if (!this.twin.isTethered) {
+                this.twin.vy *= 0.993;
+                if (Math.abs(this.twin.y) > 420) {
+                    this.twin.vy -= Math.sign(this.twin.y) * 90 * dt;
+                }
+                if (this.twin.vx < 260) {
+                    this.twin.vx += 160 * dt;
+                }
+            }
+
+            // Mirror boost & quantum abilities
+            this.twin.isBoosting = this.ship.isBoosting;
+            this.twin.phaseShiftActive = this.ship.phaseShiftActive;
+            this.twin.timeDilationActive = this.ship.timeDilationActive;
+
+            // Tether sync
+            if (this.ship.isTethered && !this.twin.isTethered && this.ship.tetherStar) {
+                this.twin.isTethered = true;
+                this.twin.tetherStar = this.ship.tetherStar;
+                this.twin.tetherLength = this.ship.tetherLength;
+                this.twin.lastTetherAngle = Math.atan2(this.twin.y - this.ship.tetherStar.y, this.twin.x - this.ship.tetherStar.x);
+                this.twin.orbitRotationAccumulator = 0;
+            } else if (!this.ship.isTethered && this.twin.isTethered) {
+                if (this.twin.tetherStar) {
+                    this.physics.evaluateRelease(this.twin, this.twin.tetherStar);
+                }
+                this.twin.isTethered = false;
+                this.twin.tetherStar = null;
+            }
+
+            // Step twin physics with the same PhysicsEngine.stepShip and same stars array
+            this.physics.stepShip(this.twin, this.stars, dt, timeScale);
+            this.twin.update(dt);
+
+            // Record twin trail
+            this.twinTrail.push({ x: this.twin.x, y: this.twin.y });
+            if (this.twinTrail.length > 35) {
+                this.twinTrail.shift();
+            }
+
+            // Measure live separation
+            const dx = this.ship.x - this.twin.x;
+            const dy = this.ship.y - this.twin.y;
+            const separation = Math.sqrt(dx * dx + dy * dy);
+
+            // Honesty check: log to console every second
+            if (this.chaosLogTimer >= 1.0) {
+                this.chaosLogTimer -= 1.0;
+                console.log(`[Chaos Twin] t=${this.chaosTime.toFixed(1)}s | Separation: ${separation.toExponential(4)} px`);
+            }
+
+            this.updateChaosHUD(separation);
+        }
 
         // Combo timer
         if (this.combo > 1) {
@@ -538,20 +1627,27 @@ class Game {
             }
         }
 
-        // Collisions: If Quantum Phase Shift is active, ship is intangible!
-        if (!this.ship.phaseShiftActive) {
-            for (const star of this.stars) {
-                const checkNodes = star.isBinary && star.twin ? [star, star.twin] : [star];
-                for (const node of checkNodes) {
-                    if (!node) continue;
-                    const d = PhysicsEngine.dist(this.ship.x, this.ship.y, node.x, node.y);
-                    if (d < node.radius + this.ship.radius) {
+        // Collisions: Check planets first (triggers exploration instead of gameover!)
+        for (const star of this.stars) {
+            const checkNodes = star.isBinary && star.twin ? [star, star.twin] : [star];
+            for (const node of checkNodes) {
+                if (!node) continue;
+                const d = PhysicsEngine.dist(this.ship.x, this.ship.y, node.x, node.y);
+                if (d < node.radius + this.ship.radius) {
+                    if (node.isPlanet || star.isPlanet) {
+                        const pData = node.planetData || star.planetData;
+                        this.startPlanetaryExploration(pData, node);
+                        return;
+                    } else if (!this.ship.phaseShiftActive) {
                         this.triggerGameOver(`Incinerated by the extreme core of a ${star.name}`);
                         return;
                     }
                 }
             }
+        }
 
+        // Asteroid Debris Collisions (intangible during Quantum Phase Shift)
+        if (!this.ship.phaseShiftActive) {
             for (let i = this.asteroids.length - 1; i >= 0; i--) {
                 const ast = this.asteroids[i];
                 const d = PhysicsEngine.dist(this.ship.x, this.ship.y, ast.x, ast.y);
@@ -563,6 +1659,7 @@ class Game {
                             this.combo = 1;
                             this.triggerScreenShake(8);
                             window.sounds.playExplosion();
+                            if (window.haptics) window.haptics.hullDamage();
                             this.particles.emitExplosion(ast.x, ast.y, '#64748b', 15);
                             this.asteroids.splice(i, 1);
                             this.addFloatingText('SHIELD DAMAGED!', this.ship.x, this.ship.y - 20, '#ffaa00');
@@ -596,14 +1693,23 @@ class Game {
             const d = PhysicsEngine.dist(this.ship.x, this.ship.y, w.x, w.y);
             if (d < w.radius + this.ship.radius) {
                 window.sounds.playWormholeWarp();
+                if (window.haptics) window.haptics.wormholeWarp();
                 this.triggerScreenShake(14);
                 this.particles.emitExplosion(w.x, w.y, '#00f7ff', 40);
                 this.ship.x += w.teleportDistance;
                 this.ship.vx = Math.max(550, this.ship.vx * 1.4);
+                this.wormholeJumps = (this.wormholeJumps || 0) + 1;
                 this.score += 1500;
+                if (this.taskManager) {
+                    this.taskManager.checkAll();
+                }
                 this.addFloatingText('HYPERSPACE WARP! +1500', this.ship.x, this.ship.y - 25, '#9900ff');
                 break;
             }
+        }
+
+        if (this.taskManager) {
+            this.taskManager.checkAll();
         }
 
         this.generateWorld(this.ship.x + 2800);
@@ -660,6 +1766,25 @@ class Game {
             const dangerRatio = Math.max(0, Math.min(1, 1 - (horizonGap / 60)));
             horizonMeter.style.opacity = (dangerRatio > 0.4 ? dangerRatio : 0.2).toString();
             horizonMeter.style.boxShadow = dangerRatio > 0.6 ? '0 0 15px #ff0055' : 'none';
+        }
+
+        // Campaign Mission HUD Bar & Goal Tracker
+        if (this.campaign && this.campaign.isCampaignMode && this.campaign.currentLevel) {
+            const lvl = this.campaign.currentLevel;
+            const curDist = Math.max(0, Math.floor(this.ship.x));
+            const pct = Math.min(100, Math.floor((curDist / lvl.targetDistance) * 100));
+
+            const hudGoal = document.getElementById('campaignHudGoal');
+            if (hudGoal) hudGoal.innerText = `DIST: ${Math.floor(this.ship.x / 100)} / ${Math.floor(lvl.targetDistance / 100)} LY`;
+
+            const hudPct = document.getElementById('campaignHudPct');
+            if (hudPct) hudPct.innerText = `${pct}%`;
+
+            const barFill = document.getElementById('campaignBarFill');
+            if (barFill) barFill.style.width = `${pct}%`;
+
+            const hudSlingshots = document.getElementById('campaignHudSlingshots');
+            if (hudSlingshots) hudSlingshots.innerText = `PERFECT SLINGSHOTS: ${this.perfectSlingshots} / ${lvl.requiredPerfectSlingshots}`;
         }
     }
 
@@ -826,13 +1951,15 @@ class Game {
     draw() {
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
-        // Always center camera directly on the ship with smooth sub-pixel lerp
-        const targetCamX = this.ship.x + 130;
-        const targetCamY = this.ship.y; // EXACTLY CENTERED
+        // Dynamic look-ahead velocity lead camera
+        const currentSpeed = Math.sqrt(this.ship.vx * this.ship.vx + this.ship.vy * this.ship.vy);
+        const leadDist = this.cameraLeadEnabled ? Math.min(260, 130 + currentSpeed * 0.28) : 130;
+        const leadY = this.cameraLeadEnabled ? this.ship.vy * 0.18 : 0;
+        const targetCamX = this.ship.x + leadDist;
+        const targetCamY = this.ship.y + leadY;
         this.camera.x += (targetCamX - this.camera.x) * 0.12;
         this.camera.y += (targetCamY - this.camera.y) * 0.12;
 
-        const currentSpeed = Math.sqrt(this.ship.vx * this.ship.vx + this.ship.vy * this.ship.vy);
         this.camera.targetZoom = Math.max(0.72, 1.0 - (currentSpeed / 1400) * 0.28);
         this.camera.zoom += (this.camera.targetZoom - this.camera.zoom) * 0.05;
 
@@ -918,6 +2045,77 @@ class Game {
             this.ship.draw(this.ctx, this.particles);
         }
 
+        // Draw Chaos Twin (translucent cyan ghost with trail & connecting line)
+        if (this.twin && this.state !== 'GAMEOVER') {
+            // Dotted connecting line between player and twin
+            this.ctx.save();
+            this.ctx.strokeStyle = 'rgba(0, 247, 255, 0.45)';
+            this.ctx.lineWidth = 1;
+            this.ctx.setLineDash([3, 4]);
+            this.ctx.beginPath();
+            this.ctx.moveTo(this.ship.x, this.ship.y);
+            this.ctx.lineTo(this.twin.x, this.twin.y);
+            this.ctx.stroke();
+            this.ctx.restore();
+
+            // Twin trail
+            if (this.twinTrail.length > 1) {
+                this.ctx.save();
+                for (let i = 0; i < this.twinTrail.length - 1; i++) {
+                    const p1 = this.twinTrail[i];
+                    const p2 = this.twinTrail[i + 1];
+                    const alpha = ((i + 1) / this.twinTrail.length) * 0.5;
+                    this.ctx.strokeStyle = `rgba(0, 247, 255, ${alpha})`;
+                    this.ctx.lineWidth = 1.5;
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(p1.x, p1.y);
+                    this.ctx.lineTo(p2.x, p2.y);
+                    this.ctx.stroke();
+                }
+                this.ctx.restore();
+            }
+
+            // Ghost tether line to star if tethered
+            if (this.twin.isTethered && this.twin.tetherStar) {
+                this.ctx.save();
+                this.ctx.strokeStyle = 'rgba(0, 247, 255, 0.35)';
+                this.ctx.lineWidth = 1.2;
+                this.ctx.setLineDash([4, 4]);
+                this.ctx.beginPath();
+                this.ctx.moveTo(this.twin.x, this.twin.y);
+                this.ctx.lineTo(this.twin.tetherStar.x, this.twin.tetherStar.y);
+                this.ctx.stroke();
+                this.ctx.restore();
+            }
+
+            // Translucent cyan ghost ship
+            this.ctx.save();
+            this.ctx.translate(this.twin.x, this.twin.y);
+            this.ctx.rotate(this.twin.angle);
+            this.ctx.globalAlpha = 0.55;
+            this.ctx.fillStyle = 'rgba(0, 247, 255, 0.2)';
+            this.ctx.strokeStyle = '#00f7ff';
+            this.ctx.lineWidth = 1.8;
+            this.ctx.shadowColor = '#00f7ff';
+            this.ctx.shadowBlur = 10;
+
+            this.ctx.beginPath();
+            this.ctx.moveTo(17, 0);
+            this.ctx.lineTo(-12, -10);
+            this.ctx.lineTo(-7, 0);
+            this.ctx.lineTo(-12, 10);
+            this.ctx.closePath();
+            this.ctx.fill();
+            this.ctx.stroke();
+
+            this.ctx.fillStyle = '#00f7ff';
+            this.ctx.beginPath();
+            this.ctx.arc(0, 0, 2.5, 0, Math.PI * 2);
+            this.ctx.fill();
+
+            this.ctx.restore();
+        }
+
         // Draw Floating In-Game Texts
         for (const ft of this.floatingTexts) {
             this.ctx.save();
@@ -935,6 +2133,9 @@ class Game {
         this.horizon.draw(this.ctx, viewTop, viewBottom, this.camera.y, this.canvas.height / this.camera.zoom, this.particles);
 
         this.ctx.restore();
+
+        // Interstellar Ranger Cockpit HUD Overlays in Screen Space
+        this.drawCockpitHorizon();
     }
 
     loop(currentTime) {
@@ -951,6 +2152,210 @@ class Game {
 
         requestAnimationFrame((t) => this.loop(t));
     }
+
+    // =========================================================================
+    // INTERSTELLAR EXPEDITION CAMPAIGN & RANGER COCKPIT METHODS
+    // =========================================================================
+
+    openCampaignModal() {
+        this.renderCampaignGrid();
+        const screen = document.getElementById('campaignScreen');
+        if (screen) screen.classList.remove('hidden');
+    }
+
+    closeCampaignModal() {
+        const screen = document.getElementById('campaignScreen');
+        if (screen) screen.classList.add('hidden');
+    }
+
+    renderCampaignGrid() {
+        const grid = document.getElementById('campaignGrid');
+        const levelsList = typeof CAMPAIGN_LEVELS !== 'undefined' ? CAMPAIGN_LEVELS : [];
+        if (!grid || !this.campaign || !levelsList.length) return;
+        grid.innerHTML = '';
+
+        levelsList.forEach(lvl => {
+            const isUnlocked = lvl.id <= this.campaign.unlockedLevel;
+            const stars = this.campaign.levelStars[lvl.id] || 0;
+            const highScore = this.campaign.levelHighScores[lvl.id] || 0;
+            const isCompleted = stars > 0;
+
+            const card = document.createElement('div');
+            card.className = `campaign-card ${isUnlocked ? (isCompleted ? 'completed' : '') : 'locked'}`;
+
+            let starsHtml = '';
+            for (let s = 1; s <= 3; s++) {
+                starsHtml += `<span class="${s <= stars ? 'star-filled' : 'star-empty'}">★</span>`;
+            }
+
+            card.innerHTML = `
+                <div class="campaign-card-header">
+                    <span class="card-pill gold-pill" style="font-size: 9px; padding: 2px 7px;">EXPEDITION ${lvl.id < 10 ? '0' + lvl.id : lvl.id}</span>
+                    <div class="campaign-stars">${starsHtml}</div>
+                </div>
+                <div class="campaign-card-title">${lvl.title}</div>
+                <div style="font-family: var(--font-mono); font-size: 10px; color: #f59e0b; margin-bottom: 4px;">// ${lvl.subtitle}</div>
+                <div class="campaign-card-desc">${lvl.briefing}</div>
+                <div class="campaign-card-meta">
+                    <span class="campaign-meta-badge">TARGET: ${Math.floor(lvl.targetDistance / 100)} LY</span>
+                    <span class="campaign-meta-badge">REQ SLINGSHOTS: ${lvl.requiredPerfectSlingshots}</span>
+                    <span class="campaign-meta-badge">3★ TIME: &lt;${lvl.starTimes.threeStar}s</span>
+                </div>
+                <div class="campaign-card-footer">
+                    <span style="font-family: var(--font-mono); font-size: 10px; color: var(--color-fg-dim);">
+                        ${highScore > 0 ? 'BEST: <span class="gold-text">' + Math.floor(highScore).toLocaleString() + ' PTS</span>' : (isUnlocked ? 'READY FOR FLIGHT' : 'CLASSIFIED')}
+                    </span>
+                    ${isUnlocked ? `<button class="campaign-launch-btn" data-level="${lvl.id}">ENGAGE ▶</button>` : `<span style="font-family: var(--font-mono); font-size: 10px; color: #64748b;">🔒 LOCKED</span>`}
+                </div>
+            `;
+
+            if (isUnlocked) {
+                const btn = card.querySelector('.campaign-launch-btn');
+                if (btn) {
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        this.closeCampaignModal();
+                        this.startGame(lvl.id);
+                    });
+                }
+            }
+
+            grid.appendChild(card);
+        });
+    }
+
+    triggerLevelComplete(completion) {
+        this.state = 'PAUSED';
+        if (typeof sounds !== 'undefined') {
+            sounds.stopTetherHum();
+            if (sounds.playVictoryFanfare) sounds.playVictoryFanfare();
+        }
+        if (typeof haptics !== 'undefined' && haptics.wormholeWarp) {
+            haptics.wormholeWarp();
+        }
+
+        const warningOverlay = document.getElementById('horizonWarningOverlay');
+        if (warningOverlay) warningOverlay.classList.add('hidden');
+
+        const modal = document.getElementById('levelCompleteModal');
+        if (!modal) return;
+
+        const titleEl = document.getElementById('levelCompleteTitle');
+        if (titleEl) titleEl.innerText = `EXPEDITION ${completion.level.id < 10 ? '0' + completion.level.id : completion.level.id}: ${completion.level.title}`;
+
+        const starsEl = document.getElementById('levelCompleteStars');
+        if (starsEl) {
+            starsEl.innerHTML = '';
+            for (let i = 1; i <= 3; i++) {
+                const star = document.createElement('span');
+                star.className = `star-icon ${i <= completion.stars ? 'awarded' : ''}`;
+                star.innerText = '★';
+                starsEl.appendChild(star);
+            }
+        }
+
+        const timeEl = document.getElementById('levelCompleteTime');
+        if (timeEl) timeEl.innerText = `${completion.time.toFixed(1)}s`;
+
+        const speedEl = document.getElementById('levelCompleteSpeed');
+        if (speedEl) speedEl.innerText = `${(this.maxSpeed / 600).toFixed(2)} c`;
+
+        const slingshotsEl = document.getElementById('levelCompleteSlingshots');
+        if (slingshotsEl) slingshotsEl.innerText = `${this.perfectSlingshots}`;
+
+        const scoreEl = document.getElementById('levelCompleteScore');
+        if (scoreEl) scoreEl.innerText = `${Math.floor(completion.score).toLocaleString()} PTS`;
+
+        const nextBtn = document.getElementById('nextLevelBtn');
+        if (nextBtn) {
+            if (completion.isFinalLevel) {
+                nextBtn.innerText = 'TRANSCENDENCE ACHIEVED ★';
+            } else {
+                nextBtn.innerText = `NEXT: EXPEDITION ${completion.level.id + 1} ▶`;
+            }
+        }
+
+        modal.classList.remove('hidden');
+    }
+
+    drawCockpitHorizon() {
+        if (this.state !== 'PLAYING') return;
+
+        const ctx = this.ctx;
+        const w = this.canvas.width;
+        const h = this.canvas.height;
+        const cx = w / 2;
+        const cy = h / 2;
+
+        ctx.save();
+
+        // 1. Relativistic Velocity Vector Reticle (Flight Path Marker)
+        const speed = Math.sqrt(this.ship.vx * this.ship.vx + this.ship.vy * this.ship.vy);
+        const headingAngle = Math.atan2(this.ship.vy, this.ship.vx);
+        const reticleDist = Math.min(80, speed * 0.08);
+        const rx = cx + Math.cos(headingAngle) * reticleDist;
+        const ry = cy + Math.sin(headingAngle) * reticleDist;
+
+        ctx.strokeStyle = 'rgba(0, 247, 255, 0.45)';
+        ctx.lineWidth = 1.5;
+
+        // Reticle ring
+        ctx.beginPath();
+        ctx.arc(rx, ry, 12, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Reticle crosshair wings
+        ctx.beginPath();
+        ctx.moveTo(rx - 22, ry);
+        ctx.lineTo(rx - 12, ry);
+        ctx.moveTo(rx + 12, ry);
+        ctx.lineTo(rx + 22, ry);
+        ctx.moveTo(rx, ry - 22);
+        ctx.lineTo(rx, ry - 12);
+        ctx.stroke();
+
+        // Reticle center dot
+        ctx.fillStyle = '#00f7ff';
+        ctx.beginPath();
+        ctx.arc(rx, ry, 2, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 2. Ranger Pitch Ladder / Attitude Horizon
+        const pitchAngle = this.ship.rotation || 0;
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(pitchAngle * 0.4);
+
+        ctx.strokeStyle = 'rgba(0, 247, 255, 0.22)';
+        ctx.lineWidth = 1.2;
+
+        const barOffsets = [-40, 0, 40];
+        for (const bo of barOffsets) {
+            const barW = bo === 0 ? 80 : 45;
+            ctx.beginPath();
+            ctx.moveTo(-barW, bo);
+            ctx.lineTo(-20, bo);
+            if (bo !== 0) ctx.lineTo(-20, bo + (bo > 0 ? -6 : 6));
+            ctx.moveTo(20, bo);
+            ctx.lineTo(barW, bo);
+            if (bo !== 0) ctx.lineTo(20, bo + (bo > 0 ? -6 : 6));
+            ctx.stroke();
+        }
+        ctx.restore();
+
+        // 3. Singularity Proximity Warning Vector (Interstellar Gargantua Alert)
+        const horizonDist = this.ship.x - this.horizon.x;
+        if (horizonDist < 750) {
+            const urgency = Math.min(1, Math.max(0, 1 - (horizonDist / 750)));
+            ctx.fillStyle = `rgba(239, 68, 68, ${0.45 + urgency * 0.55})`;
+            ctx.font = '9px "JetBrains Mono", monospace';
+            ctx.textAlign = 'left';
+            ctx.fillText(`CRITICAL HORIZON VECTOR: ${Math.floor(horizonDist / 10)} AU`, 28, h - 36);
+        }
+
+        ctx.restore();
+    }
+
 }
 
 window.addEventListener('DOMContentLoaded', () => {

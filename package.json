@@ -14,7 +14,12 @@
     "@capacitor/android": "^8.5.3",
     "@capacitor/cli": "^8.5.3",
     "@capacitor/core": "^8.5.3",
-    "vite": "5.4.11",
-    "vitest": "2.1.8"
+    "vite": "^5.4.21",
+    "vitest": "^2.1.9"
+  },
+  "dependencies": {
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/haptics": "^8.0.2",
+    "@capacitor/ios": "^8.5.3"
   }
 }
