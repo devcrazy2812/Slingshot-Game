@@ -8,7 +8,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@designcodeio/threeui/style.css': path.resolve(__dirname, 'src/shaders/threeui.css'),
-      '@designcodeio/threeui': path.resolve(__dirname, 'src/shaders/dark-souls-holo-card/index.ts')
+      '@designcodeio/threeui': path.resolve(__dirname, 'src/shaders/index.ts')
     }
   },
   build: {
@@ -18,7 +18,8 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: path.resolve(__dirname, 'index.html'),
-        card: path.resolve(__dirname, 'card-preview.html')
+        card: path.resolve(__dirname, 'card-preview.html'),
+        button: path.resolve(__dirname, 'button-preview.html')
       }
     }
   },
